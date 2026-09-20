@@ -1,0 +1,59 @@
+plugins {
+    id "java"
+}
+
+group = "dev.capstone.mindustry"
+version = "0.1.0"
+
+sourceSets {
+    main.java.srcDirs = ["plugin/src/main/java"]
+    spectator.java.srcDirs = ["client-plugin/src/main/java"]
+}
+
+repositories {
+    mavenCentral()
+
+    ivy {
+        url = "https://github.com/"
+        patternLayout {
+            artifact "/[organisation]/[module]/releases/download/[revision]/dependencies.jar"
+        }
+        metadataSources { artifact() }
+    }
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+
+dependencies {
+    compileOnly "Anuken:Mindustry:v159.7"
+    spectatorCompileOnly "Anuken:Mindustry:v159.7"
+    implementation "com.google.code.gson:gson:2.13.2"
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = "UTF-8"
+}
+
+jar {
+    archiveFileName = "mindustry-llm-bridge.jar"
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+
+    from {
+        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+    from("plugin") {
+        include "plugin.json"
+    }
+}
+
+tasks.register("spectatorJar", Jar) {
+    archiveFileName = "mindustry-rts-spectator.jar"
+    from sourceSets.spectator.output
+    from("client-plugin") {
+        include "mod.json"
+    }
+}

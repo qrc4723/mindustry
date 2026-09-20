@@ -1,0 +1,8 @@
+{
+  "name": "mindustry-llm-bridge",
+  "author": "Capstone Team",
+  "main": "dev.capstone.mindustry.MindustryAgentPlugin",
+  "description": "Local, server-side HTTP bridge for reproducible LLM and swarm-agent experiments.",
+  "version": "0.1.0",
+  "minGameVersion": 159
+}

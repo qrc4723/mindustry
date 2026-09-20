@@ -1,0 +1,12 @@
+.gradle/
+.gradle-user-home/
+.local/
+build/
+tmp/
+runs/
+agent_memory/
+__pycache__/
+*.py[cod]
+*.log
+.env
+.env.*

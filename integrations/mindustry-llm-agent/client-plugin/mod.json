@@ -1,0 +1,10 @@
+{
+  "name": "mindustry-rts-spectator",
+  "displayName": "Mindustry RTS Spectator",
+  "author": "Capstone",
+  "description": "Keeps PvP spectator recordings readable by removing client-only death wreck decals.",
+  "version": "0.1.0",
+  "minGameVersion": "159",
+  "main": "dev.capstone.mindustry.spectator.RtsSpectatorMod",
+  "java": true
+}
