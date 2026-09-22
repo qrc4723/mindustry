@@ -68,6 +68,40 @@ def preflight_rts_queue_actions(
             if isinstance(x, int) and isinstance(y, int):
                 reconstructor_slots[(x, y)] = bool(instance.get("available_for_new_order"))
 
+    placement_options: dict[str, dict[str, Any]] = {}
+    raw_placement = state.get("rts_production_placement_options")
+    if isinstance(raw_placement, dict):
+        columns = raw_placement.get("columns")
+        if isinstance(columns, list):
+            for row in raw_placement.get("rows", []):
+                if not isinstance(row, list) or len(row) != len(columns):
+                    continue
+                option = dict(zip(columns, row))
+                option_id = option.get("placement_option_id")
+                if isinstance(option_id, str):
+                    placement_options[option_id] = option
+
+    factory_references = {
+        f"factory:{x}:{y}": (x, y) for x, y in factory_slots
+    }
+    reconstructor_references = {
+        f"reconstructor:{x}:{y}": (x, y) for x, y in reconstructor_slots
+    }
+    commandable_units = [
+        unit for unit in state.get("friendly_units", [])
+        if isinstance(unit, dict) and unit.get("commandable") and isinstance(unit.get("id"), int)
+    ]
+    defender = state.get("core_defender") if isinstance(state.get("core_defender"), dict) else {}
+    defender_id = defender.get("id") if defender.get("active") else None
+    commandable_counts: dict[str, int] = {}
+    commandable_ids: set[int] = set()
+    for unit in commandable_units:
+        if unit.get("id") == defender_id:
+            continue
+        commandable_ids.add(int(unit["id"]))
+        unit_type = str(unit.get("type", ""))
+        commandable_counts[unit_type] = commandable_counts.get(unit_type, 0) + 1
+
     executable: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
     claimed_factories: set[tuple[int, int]] = set()
@@ -77,8 +111,42 @@ def preflight_rts_queue_actions(
         for squad in state.get("rts_squads", [])
         if isinstance(squad, dict) and squad.get("squad_id")
     }
-    for index, action in enumerate(actions):
+    for index, requested_action in enumerate(actions):
+        action = dict(requested_action)
         action_type = action.get("type")
+        if action_type == "place" and action.get("placement_option_id") is not None:
+            option_id = str(action.get("placement_option_id"))
+            option = placement_options.get(option_id)
+            compatible = option.get("compatible_structures", []) if option else []
+            if option is None or action.get("block") not in compatible:
+                skipped.append({
+                    "original_index": index,
+                    "action": requested_action,
+                    "reason": "invalid_or_incompatible_placement_option_id",
+                    "message": (
+                        "Skipped because placement_option_id is not a currently observed option compatible "
+                        "with the selected block. Re-observe and choose an ID from the latest state."
+                    ),
+                })
+                continue
+            action["x"], action["y"] = option.get("x"), option.get("y")
+            action.pop("placement_option_id", None)
+        if action_type in {"train_units", "upgrade_units"} and action.get("facility_id") is not None:
+            references = factory_references if action_type == "train_units" else reconstructor_references
+            coordinate = references.get(str(action.get("facility_id")))
+            if coordinate is None:
+                skipped.append({
+                    "original_index": index,
+                    "action": requested_action,
+                    "reason": "facility_reference_not_present_in_observed_state",
+                    "message": (
+                        "Skipped because facility_id is not an existing observed facility of the required type. "
+                        "Re-observe and select a current facility_id."
+                    ),
+                })
+                continue
+            action["x"], action["y"] = coordinate
+            action.pop("facility_id", None)
         if action_type == "command_units" and action.get("squad_id") in squads and not action.get("unit_ids"):
             squad = squads[str(action["squad_id"])]
             same_target = (
@@ -109,6 +177,33 @@ def preflight_rts_queue_actions(
                         "Skipped because this living squad already has the identical persistent order. "
                         "The engine continues it without reissuing; send another command only to change intent "
                         "or provide explicit unit_ids to replace/reinforce membership."
+                    ),
+                })
+                continue
+        if action_type == "command_units":
+            existing_squad = squads.get(str(action.get("squad_id", "")))
+            existing_members = int((existing_squad or {}).get("member_count", 0) or 0)
+            explicit_ids = action.get("unit_ids")
+            if isinstance(explicit_ids, list):
+                has_selectable_units = any(unit_id in commandable_ids for unit_id in explicit_ids)
+            else:
+                requested_type = str(action.get("unit", ""))
+                has_selectable_units = (
+                    existing_members > 0
+                    or (
+                        sum(commandable_counts.values()) > 0
+                        if requested_type == "all"
+                        else commandable_counts.get(requested_type, 0) > 0
+                    )
+                )
+            if not has_selectable_units:
+                skipped.append({
+                    "original_index": index,
+                    "action": requested_action,
+                    "reason": "no_matching_commandable_units_in_observed_state",
+                    "message": (
+                        "Skipped because no produced commandable unit in the observed state matches this order. "
+                        "Queued units are not selectable; wait until production completes or choose living unit IDs."
                     ),
                 })
                 continue
@@ -276,6 +371,25 @@ def run(config: AgentConfig, *, once: bool, dry_run: bool, max_turns: int | None
             "started_at_wave": strategic_context.get("started_at_wave", state.get("wave")) if same_objective else state.get("wave"),
             "unchanged_for_turns": int(strategic_context.get("unchanged_for_turns", 0)) + 1 if same_objective else 0,
         }
+        if not dry_run:
+            latest_before_action = game.state()
+            latest_episode_id = str(latest_before_action.get("episode_id"))
+            if (
+                latest_episode_id != episode_id
+                or latest_before_action.get("game_over")
+                or latest_before_action.get("result") in {"won", "lost"}
+            ):
+                run_log.write({
+                    "kind": "run_end",
+                    "at": utc_now(),
+                    "reason": "game_over_during_inference",
+                    "state": latest_before_action,
+                    "discarded_turn": turns,
+                    "discarded_decision": decision,
+                    "llm_latency_seconds": llm_result.latency_seconds,
+                    "llm_usage": llm_result.usage,
+                })
+                break
         request_id = str(uuid4())
         action_response: dict[str, Any]
         if dry_run:

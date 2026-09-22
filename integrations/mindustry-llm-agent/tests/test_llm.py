@@ -108,6 +108,9 @@ class LlmTest(unittest.TestCase):
         self.assertIn("not a multi-stage roadmap", prompt)
         self.assertIn("The action limit is not a target", prompt)
         self.assertIn("do not fill the construction queue", prompt)
+        self.assertIn("placement_option_id", prompt)
+        self.assertIn("facility_id", prompt)
+        self.assertNotIn("Conveyor rotation is", prompt)
         self.assertNotIn("Maintain a live causal path from economy to victory", prompt)
 
     @patch("mindustry_agent.llm.request_json")

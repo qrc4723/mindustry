@@ -83,7 +83,7 @@ Stockpile RTS strategic frame (causal guidance, never a build order):
   conveyors, liquids, and power are intentionally unnecessary for upgrades in this RTS mode.
 - offensive_production.unit_catalog is a column-described table of authoritative combat facts; decode its rows using
   stat_columns. Compare health, armor, speed, range, estimated DPS, air/ground targeting, movement type,
-  support/build/mining traits, summarized weapon traits, costs, and
+  summarized weapon traits, costs, and
   production time against the observed opponent. Different base units and upgrade branches are strategic options;
   no fixed unit, tier, or sequence is preferred. Upgrade chains must follow the exact exposed pairs one tier at a time.
 - rts_production_placement_options contains currently valid factory and reconstructor anchors across multiple distance
@@ -136,6 +136,29 @@ Stockpile RTS strategic frame (causal guidance, never a build order):
   a chain such as "produce N, then upgrade, then destroy the core" as the current objective when its later steps are
   not yet executable. Keep the final victory condition as rationale, execute the present step, observe what actually
   completed, and then choose whether the downstream step still makes sense.
+"""
+
+
+STOCKPILE_RTS_DECISION_PROMPT = """The supplied state is server-authoritative and uses TILE coordinates. It is a
+fresh observation of this episode; no cross-episode memory or hidden build order is supplied. The opponent receives
+the same information schema and action contract. Strategy remains yours: compare current forces, losses, queues,
+stockpile, territory, defenses, travel distance, and target health rather than following fixed phases or quotas.
+
+Return exactly one compact JSON object whose first character is { and last character is }:
+{"reasoning_summary":string,
+ "world_model":{"capabilities":[string],"constraints":[string],"opportunities":[string],"uncertainties":[string]},
+ "strategic_intent":{"objective":string,"rationale":string,"success_evidence":[string],"revision_triggers":[string]},
+ "actions":array,"wait_seconds":number}.
+Write every human-readable value in Korean. Keep JSON keys and all game/API identifiers exactly as supplied in
+English. Use at most two short strings in each list. The objective is one next observable outcome, not a multi-stage roadmap. Do not
+restate the state, emit Markdown, reveal private chain-of-thought, or fill the action limit for its own sake.
+
+Prefer the stable references exposed by the state: placement_option_id for production placement and facility_id for
+training or upgrading. Exact coordinates remain valid when deliberately chosen. A reference selects only an observed,
+currently legal execution target; it never chooses the block, unit, quantity, formation, or strategy for you. Do not
+operate a queued structure before it appears as an existing instance, do not resubmit an identical persistent squad
+order, and treat preflight skips or action_failure_memory as evidence to revise execution. Waiting with no action is
+valid when a paid queue or persistent order is already producing the intended observable result.
 """
 
 
@@ -465,7 +488,7 @@ def system_prompt_for_state(state: dict[str, Any]) -> str:
     rules = state.get("rules") if isinstance(state.get("rules"), dict) else {}
     variant = state.get("game_mode_variant") if isinstance(state.get("game_mode_variant"), dict) else {}
     if rules.get("pvp") is True and variant.get("id") == "stockpile_rts_pvp":
-        mode_prompt = STOCKPILE_RTS_PVP_MODE_PROMPT
+        return f"{STOCKPILE_RTS_PVP_MODE_PROMPT}\n\n{STOCKPILE_RTS_DECISION_PROMPT}"
     else:
         mode_prompt = PVP_MODE_PROMPT if rules.get("pvp") is True else SURVIVAL_MODE_PROMPT
     return f"{mode_prompt}\n\n{COMMON_GAMEPLAY_PROMPT}"

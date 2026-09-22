@@ -46,6 +46,32 @@ class PolicyTest(unittest.TestCase):
         self.assertEqual(result["actions"][0]["rotation"], 1)
         self.assertEqual(result["wait_seconds"], 0.5)
 
+    def test_normalizes_stockpile_rts_action_references(self) -> None:
+        decision = validate_decision({
+            "reasoning_summary": "현재 관측 후보를 사용한다.",
+            "actions": [
+                {
+                    "type": "place", "block": "ground-factory",
+                    "placement_option_id": "production:3", "rotation": 0,
+                },
+                {
+                    "type": "train_units", "facility_id": "factory:10:20",
+                    "unit": "dagger", "count": 2,
+                },
+                {
+                    "type": "upgrade_units", "facility_id": "reconstructor:14:20",
+                    "from_unit": "dagger", "to_unit": "mace", "count": 1,
+                },
+            ],
+            "wait_seconds": 0.5,
+        })
+        self.assertEqual(decision["actions"][0]["placement_option_id"], "production:3")
+        self.assertNotIn("x", decision["actions"][0])
+        self.assertEqual(decision["actions"][1]["facility_id"], "factory:10:20")
+        self.assertEqual(
+            decision["actions"][2]["facility_id"], "reconstructor:14:20"
+        )
+
     def test_coerces_and_clamps_harmless_model_number_representation_errors(self) -> None:
         result = validate_decision({
             "wait_seconds": "0.2",
@@ -527,6 +553,7 @@ class PolicyTest(unittest.TestCase):
             {"ground-factory", "additive-reconstructor"},
         )
         self.assertEqual({option["distance_band"] for option in placement_options}, {0, 3})
+        self.assertTrue(all(option["placement_option_id"].startswith("production:") for option in placement_options))
         self.assertIn("no preference", compact["rts_production_placement_options"]["ordering"])
         action_types = {
             action["type"] for action in compact["action_contract"]["shape"]["actions"]
@@ -539,9 +566,15 @@ class PolicyTest(unittest.TestCase):
             },
         )
         factory = compact["offensive_production"]["factories"][0]
+        self.assertEqual(factory["existing_instances"][0]["facility_id"], "factory:20:30")
         self.assertTrue(factory["existing_instances"][0]["native_input_and_power_status_ignored"])
         self.assertFalse(factory["existing_instances"][0]["available_for_new_order"])
         self.assertEqual(factory["existing_instances"][0]["active_queue"]["remaining"], 3)
+        reconstructor = compact["offensive_production"]["reconstructors"][0]
+        self.assertEqual(
+            reconstructor["existing_instances"][0]["facility_id"],
+            "reconstructor:50:30",
+        )
         self.assertEqual(factory["plans"][0]["maximum_trainable_from_current_stockpile"], 8)
         self.assertNotIn("unit_stats", factory["plans"][0])
         reconstructor = compact["offensive_production"]["reconstructors"][0]

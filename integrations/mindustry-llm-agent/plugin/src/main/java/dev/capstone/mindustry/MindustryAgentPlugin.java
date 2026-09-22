@@ -1265,6 +1265,7 @@ public final class MindustryAgentPlugin extends Plugin {
         value.put("enabled", autoCoreDefense);
         value.put("active", coreDefender != null && coreDefender.isAdded() && !coreDefender.dead());
         if (coreDefender != null) {
+            value.put("id", coreDefender.id);
             value.put("type", coreDefender.type.name);
             value.put("task", state.coreUnitTask);
             value.put("task_resource", state.coreUnitResource.isEmpty() ? null : state.coreUnitResource);
@@ -3322,6 +3323,9 @@ public final class MindustryAgentPlugin extends Plugin {
         if (!hasTelemetry) return;
 
         StringBuilder hud = new StringBuilder("[accent]LLM PvP 관전[]");
+        if (gameWinner != null) {
+            hud.append("\n[accent]경기 종료 — ").append(teamMarkup(gameWinner)).append(" 승리[]");
+        }
         appendSpectatorTeam(hud, Team.sharded, "[sky]");
         appendSpectatorTeam(hud, Team.crux, "[scarlet]");
         if (!rtsControlPoints.isEmpty()) {
@@ -3344,6 +3348,10 @@ public final class MindustryAgentPlugin extends Plugin {
 
     private void appendSpectatorTeam(StringBuilder hud, Team team, String color) {
         TeamAgentState state = teamAgentState(team);
+        Team opponent = team == Team.sharded ? Team.crux : Team.sharded;
+        int losses = state.unitLossesByType.values().stream().mapToInt(Integer::intValue).sum();
+        int kills = teamAgentState(opponent).unitLossesByType.values().stream()
+            .mapToInt(Integer::intValue).sum();
         CoreBuild core = team.core();
         String coreHealth = core == null
             ? "파괴됨"
@@ -3354,6 +3362,7 @@ public final class MindustryAgentPlugin extends Plugin {
         hud.append('\n').append(color).append(team.name).append("[]  [white]").append(model).append("[]")
             .append("  코어 ").append(coreHealth)
             .append(" | 유닛 ").append(team.data().units.size)
+            .append(" | 처치/손실 ").append(kills).append('/').append(losses)
             .append(" | 판단 ").append(Math.max(0, state.lastDecisionTurn))
             .append(" | 응답 ").append(String.format(Locale.ROOT, "%.1f초 (평균 %.1f초)",
                 state.lastLatencySeconds, averageLatency))

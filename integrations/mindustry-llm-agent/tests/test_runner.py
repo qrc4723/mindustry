@@ -28,6 +28,9 @@ class RunnerTimingTest(unittest.TestCase):
                 "squad_id": "center", "mode": "defend", "member_count": 3,
                 "target": {"x": 81, "y": 125}, "engagement_radius": 14,
             }],
+            "friendly_units": [
+                {"id": 101, "type": "dagger", "commandable": True},
+            ],
         }
         actions = [
             {"type": "train_units", "x": 10, "y": 20, "unit": "dagger", "count": 2},
@@ -52,6 +55,62 @@ class RunnerTimingTest(unittest.TestCase):
             "reconstructor_not_present_in_observed_state",
             "standing_squad_order_already_active",
         ])
+
+    def test_rts_preflight_resolves_observed_references_and_skips_empty_commands(self) -> None:
+        state = {
+            "game_mode_variant": {"id": "stockpile_rts_pvp"},
+            "rts_production_placement_options": {
+                "columns": [
+                    "placement_option_id", "x", "y", "distance_tiles",
+                    "distance_band", "direction_sector", "compatible_structures",
+                ],
+                "rows": [["production:0", 20, 30, 12.0, 0, 1, ["ground-factory"]]],
+            },
+            "offensive_production": {
+                "factories": [{"existing_instances": [
+                    {
+                        "facility_id": "factory:10:20", "x": 10, "y": 20,
+                        "available_for_new_order": True,
+                    },
+                ]}],
+                "reconstructors": [{"existing_instances": [
+                    {
+                        "facility_id": "reconstructor:14:20", "x": 14, "y": 20,
+                        "available_for_new_order": True,
+                    },
+                ]}],
+            },
+            "rts_squads": [],
+            "friendly_units": [],
+        }
+        actions = [
+            {
+                "type": "place", "block": "ground-factory",
+                "placement_option_id": "production:0", "rotation": 0,
+            },
+            {
+                "type": "train_units", "facility_id": "factory:10:20",
+                "unit": "dagger", "count": 2,
+            },
+            {
+                "type": "upgrade_units", "facility_id": "reconstructor:14:20",
+                "from_unit": "dagger", "to_unit": "mace", "count": 1,
+            },
+            {
+                "type": "command_units", "unit": "dagger", "mode": "attack_move",
+                "target_x": 80, "target_y": 40, "max_units": 4,
+            },
+        ]
+        executable, skipped = preflight_rts_queue_actions(state, actions)
+        self.assertEqual(executable[0]["x"], 20)
+        self.assertEqual(executable[0]["y"], 30)
+        self.assertNotIn("placement_option_id", executable[0])
+        self.assertEqual((executable[1]["x"], executable[1]["y"]), (10, 20))
+        self.assertEqual((executable[2]["x"], executable[2]["y"]), (14, 20))
+        self.assertEqual(
+            [item["reason"] for item in skipped],
+            ["no_matching_commandable_units_in_observed_state"],
+        )
 
 
 if __name__ == "__main__":

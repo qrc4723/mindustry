@@ -104,10 +104,23 @@ def validate_decision(raw: dict[str, Any]) -> dict[str, Any]:
             block = action.get("block")
             if not isinstance(block, str) or not block:
                 raise DecisionError(f"actions[{index}].block must be a non-empty string.")
-            x = _integer(action.get("x"), f"actions[{index}].x")
-            y = _integer(action.get("y"), f"actions[{index}].y")
             rotation = _integer(action.get("rotation", 0), f"actions[{index}].rotation") % 4
-            normalized.append({"type": "place", "block": block, "x": x, "y": y, "rotation": rotation})
+            placement_option_id = action.get("placement_option_id")
+            if placement_option_id is not None:
+                normalized.append({
+                    "type": "place", "block": block,
+                    "placement_option_id": _required_string(
+                        placement_option_id, f"actions[{index}].placement_option_id"
+                    ),
+                    "rotation": rotation,
+                })
+            else:
+                normalized.append({
+                    "type": "place", "block": block,
+                    "x": _integer(action.get("x"), f"actions[{index}].x"),
+                    "y": _integer(action.get("y"), f"actions[{index}].y"),
+                    "rotation": rotation,
+                })
         elif action_type == "remove":
             normalized.append({
                 "type": action_type,
@@ -177,20 +190,24 @@ def validate_decision(raw: dict[str, Any]) -> dict[str, Any]:
                 "unit": _required_string(action.get("unit"), f"actions[{index}].unit"),
             })
         elif action_type == "train_units":
-            normalized.append({
+            normalized_action = {
                 "type": action_type,
-                "x": _integer(action.get("x"), f"actions[{index}].x"),
-                "y": _integer(action.get("y"), f"actions[{index}].y"),
                 "unit": _required_string(action.get("unit"), f"actions[{index}].unit"),
                 "count": _bounded_integer(
                     action.get("count"), f"actions[{index}].count", 1, 50
                 ),
-            })
+            }
+            if action.get("facility_id") is not None:
+                normalized_action["facility_id"] = _required_string(
+                    action.get("facility_id"), f"actions[{index}].facility_id"
+                )
+            else:
+                normalized_action["x"] = _integer(action.get("x"), f"actions[{index}].x")
+                normalized_action["y"] = _integer(action.get("y"), f"actions[{index}].y")
+            normalized.append(normalized_action)
         elif action_type == "upgrade_units":
-            normalized.append({
+            normalized_action = {
                 "type": action_type,
-                "x": _integer(action.get("x"), f"actions[{index}].x"),
-                "y": _integer(action.get("y"), f"actions[{index}].y"),
                 "from_unit": _required_string(
                     action.get("from_unit"), f"actions[{index}].from_unit"
                 ),
@@ -200,7 +217,15 @@ def validate_decision(raw: dict[str, Any]) -> dict[str, Any]:
                 "count": _bounded_integer(
                     action.get("count"), f"actions[{index}].count", 1, 50
                 ),
-            })
+            }
+            if action.get("facility_id") is not None:
+                normalized_action["facility_id"] = _required_string(
+                    action.get("facility_id"), f"actions[{index}].facility_id"
+                )
+            else:
+                normalized_action["x"] = _integer(action.get("x"), f"actions[{index}].x")
+                normalized_action["y"] = _integer(action.get("y"), f"actions[{index}].y")
+            normalized.append(normalized_action)
         elif action_type == "command_units":
             mode = action.get("mode")
             if mode not in {"attack", "attack_move", "rally", "defend", "retreat", "stop"}:
@@ -580,8 +605,7 @@ def _compact_unit_stats(stats: Any) -> dict[str, Any]:
 def _unit_catalog_table(catalog: dict[str, dict[str, Any]]) -> dict[str, Any]:
     stat_columns = [
         "unit", "health", "armor", "speed_tiles_per_second", "range_tiles", "estimated_dps",
-        "movement", "targets_air", "targets_ground", "can_attack", "can_heal", "build_speed",
-        "mine_tier", "mine_speed", "item_capacity", "payload_capacity", "ability_count", "weapon_traits",
+        "movement", "targets_air", "targets_ground", "weapon_traits",
     ]
     rows: list[list[Any]] = []
     for name in sorted(catalog):
@@ -666,6 +690,7 @@ def _stockpile_rts_production_state(
             "plans": plan_rows,
             "existing_instances": [
                 {
+                    "facility_id": f"factory:{building.get('x')}:{building.get('y')}",
                     "x": building.get("x"),
                     "y": building.get("y"),
                     "native_input_and_power_status_ignored": True,
@@ -730,6 +755,7 @@ def _stockpile_rts_production_state(
             "upgrades": upgrade_rows,
             "existing_instances": [
                 {
+                    "facility_id": f"reconstructor:{building.get('x')}:{building.get('y')}",
                     "x": building.get("x"),
                     "y": building.get("y"),
                     "native_input_power_liquid_and_payload_status_ignored": True,
@@ -844,7 +870,7 @@ def _stockpile_rts_defense_state(
                             placement.get("ground_route_intervals", []),
                             placement.get("air_route_distance_intervals", []),
                         ]
-                        for placement in placements[:4] if isinstance(placement, dict)
+                        for placement in placements[:2] if isinstance(placement, dict)
                     ],
                 }
         wall_tables: dict[str, Any] = {}
@@ -857,7 +883,7 @@ def _stockpile_rts_defense_state(
                     "columns": ["x", "y", "steps_from_core"],
                     "rows": [
                         [placement.get("x"), placement.get("y"), placement.get("steps_from_core")]
-                        for placement in placements[:4] if isinstance(placement, dict)
+                        for placement in placements[:2] if isinstance(placement, dict)
                     ],
                 }
         approaches.append({
@@ -912,11 +938,17 @@ def _stockpile_rts_action_contract(raw: Any) -> dict[str, Any]:
             "expected_episode_id": shape.get("expected_episode_id"),
             "observed_tick": shape.get("observed_tick"),
             "actions": [
-                {"type": "place", "block": "ground-factory", "x": 10, "y": 20, "rotation": 0},
-                {"type": "remove", "x": 10, "y": 20},
-                {"type": "train_units", "x": 10, "y": 20, "unit": "dagger", "count": 5},
                 {
-                    "type": "upgrade_units", "x": 14, "y": 20,
+                    "type": "place", "block": "ground-factory",
+                    "placement_option_id": "production:0", "rotation": 0,
+                },
+                {"type": "remove", "x": 10, "y": 20},
+                {
+                    "type": "train_units", "facility_id": "factory:10:20",
+                    "unit": "dagger", "count": 5,
+                },
+                {
+                    "type": "upgrade_units", "facility_id": "reconstructor:14:20",
                     "from_unit": "dagger", "to_unit": "mace", "count": 5,
                 },
                 {
@@ -1226,6 +1258,30 @@ def compact_state(state: dict[str, Any]) -> dict[str, Any]:
             "infrastructure_backlog", "recent_defense_outcomes",
         ):
             compact.pop(key, None)
+        core = state.get("core") if isinstance(state.get("core"), dict) else {}
+        compact["core"] = {
+            key: core.get(key)
+            for key in ("x", "y", "size", "health", "max_health", "items")
+            if core.get(key) is not None
+        }
+        compact["cores"] = [
+            {
+                key: core_row.get(key)
+                for key in ("x", "y", "size", "health", "max_health")
+                if core_row.get(key) is not None
+            }
+            for core_row in state.get("cores", []) if isinstance(core_row, dict)
+        ]
+        fairness = state.get("pvp_fairness") if isinstance(state.get("pvp_fairness"), dict) else {}
+        compact["pvp_fairness"] = {
+            key: fairness.get(key)
+            for key in (
+                "applied", "method", "source_core", "target_core", "compact_visible_arena",
+                "core_separation_tiles", "coordinate_transform", "terrain_mismatch_pairs_after_copy",
+                "resource_mismatch_pairs_after_copy", "equal_core_stockpile",
+            )
+            if fairness.get(key) is not None
+        }
         compact["action_contract"] = _stockpile_rts_action_contract(state.get("action_contract"))
         queue_summary: dict[str, Any] = {}
         for key, active_status in (
@@ -1267,7 +1323,7 @@ def compact_state(state: dict[str, Any]) -> dict[str, Any]:
         if isinstance(defender, dict):
             compact["core_defender"] = {
                 key: defender.get(key) for key in (
-                    "enabled", "active", "type", "x", "y", "health", "max_health",
+                    "enabled", "active", "id", "type", "x", "y", "health", "max_health",
                     "weapon_range_tiles", "task", "task_age_seconds", "task_progress",
                     "carried_item", "carried_amount",
                 ) if defender.get(key) is not None
@@ -1351,24 +1407,44 @@ def compact_state(state: dict[str, Any]) -> dict[str, Any]:
         for building in enemy.get("buildings", [])[:180]:
             if not isinstance(building, dict):
                 continue
-            building_rows.append([
-                building.get("block"), building.get("x"), building.get("y"),
-                building.get("rotation"), building.get("health"), building.get("max_health"),
-                building.get("items", {}), building.get("status"),
-            ])
-        compact["enemy_teams"].append({
+            if stockpile_rts:
+                building_rows.append([
+                    building.get("block"), building.get("x"), building.get("y"),
+                    building.get("health"), building.get("max_health"),
+                ])
+            else:
+                building_rows.append([
+                    building.get("block"), building.get("x"), building.get("y"),
+                    building.get("rotation"), building.get("health"), building.get("max_health"),
+                    building.get("items", {}), building.get("status"),
+                ])
+        enemy_cores = []
+        for enemy_core in enemy.get("cores", []):
+            if not isinstance(enemy_core, dict):
+                continue
+            enemy_cores.append({
+                key: enemy_core.get(key)
+                for key in ("x", "y", "size", "health", "max_health")
+                if enemy_core.get(key) is not None
+            } if stockpile_rts else enemy_core)
+        enemy_row = {
             "team": enemy.get("team"),
-            "core": enemy.get("core"),
-            "cores": enemy.get("cores", []),
+            "core": enemy_cores[0] if enemy_cores else None,
+            "cores": enemy_cores,
             "building_table": {
-                "columns": ["block", "x", "y", "rotation", "health", "max_health", "items", "status"],
+                "columns": (
+                    ["block", "x", "y", "health", "max_health"] if stockpile_rts
+                    else ["block", "x", "y", "rotation", "health", "max_health", "items", "status"]
+                ),
                 "rows": building_rows,
             },
-            "units": [
+        }
+        if not stockpile_rts:
+            enemy_row["units"] = [
                 {key: unit.get(key) for key in ("type", "x", "y", "health", "max_health")}
                 for unit in enemy.get("units", [])[:40] if isinstance(unit, dict)
-            ],
-        })
+            ]
+        compact["enemy_teams"].append(enemy_row)
 
     grouped_ores: dict[str, list[dict[str, Any]]] = {}
     for ore in state.get("nearby_ores", []):
@@ -1418,7 +1494,9 @@ def compact_state(state: dict[str, Any]) -> dict[str, Any]:
             ).encode("utf-8")
         ).digest())
         # Preserve spatial choice while bounding a static catalog that is resent every turn.
-        placement_options = placement_options[:32]
+        placement_options = placement_options[:24]
+        for index, option in enumerate(placement_options):
+            option["placement_option_id"] = f"production:{index}"
         compact["rts_production_placement_options"] = {
             "meaning": (
                 "Currently valid, spatially distributed factory or reconstructor anchors spanning distance bands "
@@ -1429,12 +1507,12 @@ def compact_state(state: dict[str, Any]) -> dict[str, Any]:
             "direction_sector_order": "0=east, then counter-clockwise in 45-degree steps",
             "ordering": "deterministically shuffled per episode; list order carries no preference",
             "columns": [
-                "x", "y", "distance_tiles", "distance_band", "direction_sector",
+                "placement_option_id", "x", "y", "distance_tiles", "distance_band", "direction_sector",
                 "compatible_structures",
             ],
             "rows": [
                 [
-                    option.get("x"), option.get("y"), option.get("distance_tiles"),
+                    option.get("placement_option_id"), option.get("x"), option.get("y"), option.get("distance_tiles"),
                     option.get("distance_band"), option.get("direction_sector"),
                     option.get("compatible_structures", []),
                 ]
