@@ -1,5 +1,5 @@
 param(
-    [string]$Model = "deepseek-v4-flash:cloud",
+    [string]$Model = "deepseek-v4-pro:cloud",
     [string]$ReasoningEffort = "none",
     [int]$MaxTurns = 20,
     [switch]$DryRun

@@ -1,9 +1,37 @@
 import unittest
 
-from mindustry_agent.runner import decision_delay, preflight_rts_queue_actions
+from mindustry_agent.runner import (
+    decision_delay,
+    preflight_rts_queue_actions,
+    prepare_decision_actions,
+)
 
 
 class RunnerTimingTest(unittest.TestCase):
+    def test_preflight_resolution_is_applied_when_nothing_is_skipped(self) -> None:
+        state = {
+            "game_mode_variant": {"id": "stockpile_rts_pvp"},
+            "rts_production_placement_options": {
+                "columns": ["placement_option_id", "x", "y", "compatible_structures"],
+                "rows": [["production:0", 20, 30, ["ground-factory"]]],
+            },
+            "offensive_production": {"factories": [], "reconstructors": []},
+            "rts_squads": [],
+            "friendly_units": [],
+        }
+        original = {
+            "actions": [{
+                "type": "place", "block": "ground-factory",
+                "placement_option_id": "production:0", "rotation": 0,
+            }],
+            "reasoning_summary": "build",
+        }
+        prepared, requested, skipped = prepare_decision_actions(state, original)
+        self.assertEqual(requested, original["actions"])
+        self.assertEqual(skipped, [])
+        self.assertEqual((prepared["actions"][0]["x"], prepared["actions"][0]["y"]), (20, 30))
+        self.assertNotIn("placement_option_id", prepared["actions"][0])
+
     def test_stockpile_rts_ignores_model_requested_long_wait(self) -> None:
         state = {"game_mode_variant": {"id": "stockpile_rts_pvp"}}
         self.assertEqual(decision_delay(state, 0.5, 30.0), 0.5)

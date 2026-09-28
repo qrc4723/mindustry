@@ -1,6 +1,6 @@
 param(
     [string]$PrimaryModel = "glm-5.3-flash:cloud",
-    [string]$DeepSeekModel = "deepseek-v4-flash:cloud",
+    [string]$DeepSeekModel = "deepseek-v4-pro:cloud",
     [string]$PrimaryToken = "local-primary-team-token",
     [string]$DeepSeekToken = "local-deepseek-team-token",
     [string]$PrimaryReasoningEffort = "low",

@@ -6258,7 +6258,7 @@ public final class MindustryAgentPlugin extends Plugin {
 
         String python = System.getenv().getOrDefault("MINDUSTRY_AGENT_PYTHON", "python").trim();
         String primaryModel = System.getenv().getOrDefault("PVP_PRIMARY_MODEL", "glm-5.3-flash:cloud").trim();
-        String deepSeekModel = System.getenv().getOrDefault("PVP_DEEPSEEK_MODEL", "deepseek-v4-flash:cloud").trim();
+        String deepSeekModel = System.getenv().getOrDefault("PVP_DEEPSEEK_MODEL", "deepseek-v4-pro:cloud").trim();
         String primaryReasoning = System.getenv().getOrDefault("PVP_PRIMARY_REASONING_EFFORT", "low").trim();
         String deepSeekReasoning = System.getenv().getOrDefault("PVP_DEEPSEEK_REASONING_EFFORT", "none").trim();
         Process primaryProcess = null;

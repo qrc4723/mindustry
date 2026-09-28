@@ -236,6 +236,17 @@ def preflight_rts_queue_actions(
     return executable, skipped
 
 
+def prepare_decision_actions(
+    state: dict[str, Any], decision: dict[str, Any]
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+    """Resolve stable action references even when no action needs to be skipped."""
+    requested_actions = decision["actions"]
+    executable_actions, preflight_skips = preflight_rts_queue_actions(
+        state, requested_actions
+    )
+    return {**decision, "actions": executable_actions}, requested_actions, preflight_skips
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -341,6 +352,14 @@ def run(config: AgentConfig, *, once: bool, dry_run: bool, max_turns: int | None
                 })
                 print(f"turn={turns} model session usage limit reached; stopping")
                 break
+            if isinstance(error, HttpJsonError) and error.status_code in {404, 410}:
+                run_log.write({
+                    "kind": "run_end", "at": utc_now(),
+                    "reason": "model_unavailable", "turn": turns,
+                    "status_code": error.status_code,
+                })
+                print(f"turn={turns} model is unavailable ({error.status_code}); stopping")
+                break
             print(f"turn={turns} model response failed: {error}; continuing")
             turns += 1
             if once or (max_turns is not None and turns >= max_turns):
@@ -348,13 +367,9 @@ def run(config: AgentConfig, *, once: bool, dry_run: bool, max_turns: int | None
             retry_delay = decision_delay(state, max(2.0, config.decision_interval_seconds), 2.0)
             time.sleep(retry_delay)
             continue
-        decision = llm_result.decision
-        requested_actions = decision["actions"]
-        executable_actions, preflight_skips = preflight_rts_queue_actions(
-            compact_decision_state, requested_actions
+        decision, requested_actions, preflight_skips = prepare_decision_actions(
+            compact_decision_state, llm_result.decision
         )
-        if preflight_skips:
-            decision = {**decision, "actions": executable_actions}
         previous_objective = strategic_context.get("objective")
         next_objective = decision["strategic_intent"].get("objective", "")
         same_objective = bool(next_objective) and next_objective == previous_objective

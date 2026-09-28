@@ -35,7 +35,7 @@ class AgentConfig:
             game_team=os.getenv("MINDUSTRY_TEAM", "sharded").strip(),
             llm_base_url=os.getenv("LLM_BASE_URL", "http://127.0.0.1:11434/v1").rstrip("/"),
             llm_api_key=os.getenv("LLM_API_KEY", "ollama").strip(),
-            llm_model=os.getenv("LLM_MODEL", "deepseek-v4-flash:cloud").strip(),
+            llm_model=os.getenv("LLM_MODEL", "deepseek-v4-pro:cloud").strip(),
             llm_timeout_seconds=float(os.getenv("LLM_TIMEOUT_SECONDS", "180")),
             llm_max_tokens=int(os.getenv("LLM_MAX_TOKENS", "2400")),
             llm_reasoning_effort=os.getenv("LLM_REASONING_EFFORT", "none").strip(),
