@@ -20,3 +20,12 @@ try {
 } finally {
     Pop-Location
 }
+
+$builtJar = Join-Path $repoRoot "build\libs\mindustry-llm-bridge.jar"
+$serverRoot = Join-Path $repoRoot ".local\server"
+$serverMods = Join-Path $serverRoot "config\mods"
+if (Test-Path -LiteralPath $serverRoot) {
+    New-Item -ItemType Directory -Path $serverMods -Force | Out-Null
+    Copy-Item -LiteralPath $builtJar -Destination (Join-Path $serverMods "mindustry-llm-bridge.jar") -Force
+    Write-Host "Deployed plugin to $serverMods"
+}

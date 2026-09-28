@@ -19,6 +19,7 @@ $env:PVP_DEEPSEEK_REASONING_EFFORT = $DeepSeekReasoningEffort
 
 Write-Host "Stockpile RTS teams: GLM-5.3-Flash=sharded, DeepSeek=crux"
 Write-Host "After the server prompt appears, enter: rts-start"
+Write-Host "For the symmetric three-lane showcase instead, enter: showcase-rts-start"
 Write-Host "Then reconnect the client and enter in game chat: /agent-start 500"
 Write-Host "For neutral free-camera viewing, enter in game chat: /spectate"
 & (Join-Path $PSScriptRoot "run-server.ps1")

@@ -80,6 +80,8 @@ class LlmTest(unittest.TestCase):
         })
         self.assertIn("strategic real-time", prompt)
         self.assertIn("rts_control_points", prompt)
+        self.assertIn("rts_battlefield", prompt)
+        self.assertIn("three-lane showcase", prompt)
         self.assertIn("persistent squad_id", prompt)
         self.assertIn("recent_combat_losses", prompt)
         self.assertIn("recent_unit_command_receipts", prompt)

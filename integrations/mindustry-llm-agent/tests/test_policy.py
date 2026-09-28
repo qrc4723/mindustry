@@ -4,6 +4,21 @@ from mindustry_agent.policy import DecisionError, compact_state, extract_json_ob
 
 
 class PolicyTest(unittest.TestCase):
+    def test_keeps_rts_battlefield_lane_facts(self) -> None:
+        battlefield = {
+            "style": "symmetric_three_lane_showcase",
+            "lanes": [{
+                "id": "center_technology", "crossing_center_y": 40,
+                "ground_characteristic": "shortest direct ground crossing",
+            }],
+            "air_behavior": "flying units ignore the neutral divider",
+        }
+        compact = compact_state({
+            "game_mode_variant": {"id": "stockpile_rts_pvp"},
+            "rts_battlefield": battlefield,
+        })
+        self.assertEqual(compact["rts_battlefield"], battlefield)
+
     def test_keeps_rts_execution_and_loss_evidence_including_wiped_squads(self) -> None:
         losses = {
             "self": {"last_10_seconds": 3, "last_30_seconds": 5},

@@ -45,7 +45,7 @@ PvP strategic frame (causal guidance, never a build order):
 STOCKPILE_RTS_PVP_MODE_PROMPT = """You are the sole strategic commander of one team in a strategic real-time
 Mindustry PvP match designed to evaluate army composition, territorial control, production capacity, defense, and
 multi-squad maneuver without conveyor puzzles. This is separate from economy PvP and wave survival. Destroy every
-opposing core while preserving at least one of your own. The opponent receives the identical prompt, flat map,
+opposing core while preserving at least one of your own. The opponent receives the identical prompt, battlefield,
 finite starting stockpile, neutral control objectives, action contract, and timing rules.
 
 Stockpile RTS strategic frame (causal guidance, never a build order):
@@ -58,6 +58,11 @@ Stockpile RTS strategic frame (causal guidance, never a build order):
   its exact capture radius, owner/progress, local force presence, and periodic item income. Decide which points are
   worth contesting, how many squads to commit, and whether income, denial, defense, or a core attack has greater
   current value. They are opportunities, not a prescribed opening or capture order.
+- rts_battlefield describes the current arena. In the open baseline, ground forces can approach directly. In the
+  three-lane showcase, indestructible neutral terrain creates north, center, and south ground crossings around the
+  listed coordinates. The center is the shortest route, side lanes are longer flanks with different objectives, and
+  flying units can cross the divider freely. Decide whether to concentrate, split, feint, defend a choke, contest an
+  income point, or bypass terrain from the current forces and opponent. No lane, force ratio, or opening is preferred.
 - Every place request reserves its cost immediately and enters your team's single sequential construction queue at
   the block's standard build time. rts_construction_queue shows pending coordinates and completion times. A long JSON
   list is therefore a strategic queue, not instant parallel construction; do not train from a queued factory until its

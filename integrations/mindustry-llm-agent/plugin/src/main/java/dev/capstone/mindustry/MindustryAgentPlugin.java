@@ -288,6 +288,8 @@ public final class MindustryAgentPlugin extends Plugin {
             Log.info(schedulePvpStart(args.length == 0 ? "Glacier" : String.join(" ", args))));
         handler.register("rts-start", "[map]", "Start stockpile RTS PvP without mining/logistics (default: Glacier cores).", args ->
             Log.info(scheduleRtsStart(args.length == 0 ? "Glacier" : String.join(" ", args))));
+        handler.register("showcase-rts-start", "[map]", "Start stockpile RTS PvP on a symmetric three-lane battlefield.", args ->
+            Log.info(scheduleShowcaseRtsStart(args.length == 0 ? "Glacier" : String.join(" ", args))));
     }
 
     @Override
@@ -344,6 +346,13 @@ public final class MindustryAgentPlugin extends Plugin {
                 return;
             }
             player.sendMessage("[accent]" + scheduleRtsStart(args.length == 0 ? "Glacier" : String.join(" ", args)));
+        });
+        handler.<Player>register("showcase-rts-start", "[map]", "Start the symmetric three-lane stockpile RTS showcase.", (args, player) -> {
+            if (!canControlAgent(player)) {
+                player.sendMessage("[scarlet]Only a local player or server admin can start the RTS showcase.");
+                return;
+            }
+            player.sendMessage("[accent]" + scheduleShowcaseRtsStart(args.length == 0 ? "Glacier" : String.join(" ", args)));
         });
         handler.<Player>register("spectate", "Enter neutral free-camera spectator mode.", (args, player) -> {
             if (!canControlAgent(player)) {
@@ -421,14 +430,18 @@ public final class MindustryAgentPlugin extends Plugin {
     }
 
     private String schedulePvpStart(String mapName) {
-        return schedulePvpStart(mapName, false);
+        return schedulePvpStart(mapName, false, false);
     }
 
     private String scheduleRtsStart(String mapName) {
-        return schedulePvpStart(mapName, true);
+        return schedulePvpStart(mapName, true, false);
     }
 
-    private String schedulePvpStart(String mapName, boolean stockpileRts) {
+    private String scheduleShowcaseRtsStart(String mapName) {
+        return schedulePvpStart(mapName, true, true);
+    }
+
+    private String schedulePvpStart(String mapName, boolean stockpileRts, boolean strategicBattlefield) {
         if (serverCommands == null) return "PvP start failed: server command handler is unavailable";
         if (restartScheduled) return "restart already scheduled";
         restartScheduled = true;
@@ -443,7 +456,9 @@ public final class MindustryAgentPlugin extends Plugin {
                 Vars.state.rules.pauseDisabled = true;
                 String requestedModeVariant = stockpileRts ? "stockpile_rts_pvp" : "economy_pvp";
                 gameModeVariant = requestedModeVariant;
-                pvpFairness = createFlatSymmetricPvpArena(Team.sharded, Team.crux, !stockpileRts);
+                pvpFairness = createSymmetricPvpArena(
+                    Team.sharded, Team.crux, !stockpileRts, strategicBattlefield
+                );
                 // World resizing emits a fresh load event, which intentionally resets per-match state.
                 // Restore the caller-selected PvP variant before initializing its mechanics.
                 gameModeVariant = requestedModeVariant;
@@ -458,11 +473,15 @@ public final class MindustryAgentPlugin extends Plugin {
                 Log.err("[LLM bridge] PvP start failed", error);
             }
         });
-        return "starting " + mapName + " " + (stockpileRts ? "stockpile RTS PvP" : "economy PvP")
+        String modeName = strategicBattlefield ? "three-lane stockpile RTS showcase"
+            : stockpileRts ? "stockpile RTS PvP" : "economy PvP";
+        return "starting " + mapName + " " + modeName
             + "; connect the client again if the current game closes";
     }
 
-    private Map<String, Object> createFlatSymmetricPvpArena(Team sourceTeam, Team targetTeam, boolean includeOrePatches) {
+    private Map<String, Object> createSymmetricPvpArena(
+        Team sourceTeam, Team targetTeam, boolean includeOrePatches, boolean strategicBattlefield
+    ) {
         CoreBuild sourceCore = sourceTeam.core();
         CoreBuild targetCore = targetTeam.core();
         if (sourceCore == null || targetCore == null) {
@@ -517,6 +536,14 @@ public final class MindustryAgentPlugin extends Plugin {
         }
         sourceCore = relocatedSource;
         targetCore = relocatedTarget;
+
+        Map<String, Object> battlefield = strategicBattlefield
+            ? createSymmetricThreeLaneBattlefield(sourceCore, targetCore)
+            : Map.of(
+                "style", "open_flat_baseline",
+                "ground_route_choices", 1,
+                "description", "Obstacle-free baseline arena; neutral objectives remain available."
+            );
 
         Vars.state.rules.limitMapArea = true;
         Vars.state.rules.limitX = arenaX;
@@ -580,7 +607,9 @@ public final class MindustryAgentPlugin extends Plugin {
         result.put("applied", true);
         result.put("method", includeOrePatches
             ? "flat_arena_with_point_reflected_resource_patches"
-            : "flat_stockpile_rts_arena_without_mineable_resources");
+            : strategicBattlefield
+                ? "symmetric_three_lane_stockpile_rts_arena_without_mineable_resources"
+                : "flat_stockpile_rts_arena_without_mineable_resources");
         result.put("canonical_side", sourceTeam.name);
         result.put("source_core", buildingRef(sourceCore));
         result.put("target_core", buildingRef(targetCore));
@@ -599,10 +628,83 @@ public final class MindustryAgentPlugin extends Plugin {
         result.put("source_resource_tiles", sourceResources);
         result.put("target_resource_tiles", targetResources);
         result.put("resource_tile_counts_equal", sourceResources.equals(targetResources));
+        result.put("strategic_battlefield", battlefield);
         result.put("note", includeOrePatches
             ? "Ore does not deplete; both sides have point-reflected mineable tiles on an obstacle-free arena."
             : "No mineable resources exist; both sides receive the same finite core stockpile and use RTS training queues.");
         return result;
+    }
+
+    private Map<String, Object> createSymmetricThreeLaneBattlefield(CoreBuild sourceCore, CoreBuild targetCore) {
+        int sumX = sourceCore.tileX() + targetCore.tileX();
+        int sumY = sourceCore.tileY() + targetCore.tileY();
+        int centerY = sumY / 2;
+        int[] laneCenters = {centerY + 28, centerY, centerY - 28};
+        int dividerLeft = (sumX - 3) / 2;
+        int dividerRight = sumX - dividerLeft;
+        int openingHalfHeight = 7;
+        int neutralWallTiles = 0;
+
+        for (int x = dividerLeft; x <= dividerRight; x++) {
+            for (int y = 0; y < Vars.world.height(); y++) {
+                boolean laneOpening = false;
+                for (int laneCenter : laneCenters) {
+                    if (Math.abs(y - laneCenter) <= openingHalfHeight) {
+                        laneOpening = true;
+                        break;
+                    }
+                }
+                if (laneOpening) continue;
+                Tile tile = Vars.world.tile(x, y);
+                if (tile == null || tile.build instanceof CoreBuild) continue;
+                tile.setBlock(Blocks.stoneWall);
+                neutralWallTiles++;
+            }
+        }
+
+        List<Map<String, Object>> lanes = new ArrayList<>();
+        lanes.add(strategicLane(
+            "north_industry", "north", dividerLeft, dividerRight, laneCenters[0], openingHalfHeight,
+            "longer ground flank around the north divider; its objective pays basic industry items"
+        ));
+        lanes.add(strategicLane(
+            "center_technology", "center", dividerLeft, dividerRight, laneCenters[1], openingHalfHeight,
+            "shortest direct ground crossing and therefore the most immediate route between cores"
+        ));
+        lanes.add(strategicLane(
+            "south_advanced", "south", dividerLeft, dividerRight, laneCenters[2], openingHalfHeight,
+            "longer ground flank around the south divider; its objective pays advanced items"
+        ));
+
+        return Map.of(
+            "style", "symmetric_three_lane_showcase",
+            "ground_route_choices", 3,
+            "neutral_divider_x_min", dividerLeft,
+            "neutral_divider_x_max", dividerRight,
+            "neutral_wall_tiles", neutralWallTiles,
+            "wall_behavior", "indestructible neutral terrain that redirects ground units",
+            "air_behavior", "flying units ignore the neutral divider and can cross between lanes",
+            "lanes", lanes,
+            "strategy_contract", "lane facts are observations, not a preferred opening, force split, or attack order"
+        );
+    }
+
+    private Map<String, Object> strategicLane(
+        String id, String mapSide, int dividerLeft, int dividerRight, int centerY,
+        int openingHalfHeight, String characteristic
+    ) {
+        return Map.of(
+            "id", id,
+            "map_side", mapSide,
+            "objective_id", id,
+            "crossing_x_min", dividerLeft,
+            "crossing_x_max", dividerRight,
+            "crossing_center_y", centerY,
+            "crossing_y_min", centerY - openingHalfHeight,
+            "crossing_y_max", centerY + openingHalfHeight,
+            "ground_characteristic", characteristic,
+            "air_access", "unrestricted"
+        );
     }
 
     private void clearStaleTeamBuildingRegistry(Team team) {
@@ -661,11 +763,11 @@ public final class MindustryAgentPlugin extends Plugin {
         double length = Math.max(1d, Math.sqrt(forwardX * forwardX + forwardY * forwardY));
         double lateralX = -forwardY / length;
         double lateralY = forwardX / length;
-        addRtsControlPoint("west_industry", centerX + lateralX * 28d, centerY + lateralY * 28d,
+        addRtsControlPoint("north_industry", centerX + lateralX * 28d, centerY + lateralY * 28d,
             Map.of(Items.copper, 90, Items.lead, 90, Items.graphite, 45));
         addRtsControlPoint("center_technology", centerX, centerY,
             Map.of(Items.silicon, 70, Items.titanium, 45, Items.metaglass, 35));
-        addRtsControlPoint("east_advanced", centerX - lateralX * 28d, centerY - lateralY * 28d,
+        addRtsControlPoint("south_advanced", centerX - lateralX * 28d, centerY - lateralY * 28d,
             Map.of(Items.thorium, 35, Items.plastanium, 25, Items.phaseFabric, 18, Items.surgeAlloy, 18));
         nextRtsControlIncomeTick = Vars.state.tick + RTS_CONTROL_INCOME_INTERVAL_TICKS;
         Map<String, Object> enriched = new LinkedHashMap<>(pvpFairness);
@@ -797,9 +899,9 @@ public final class MindustryAgentPlugin extends Plugin {
 
     private String controlPointDisplayName(String id) {
         return switch (id) {
-            case "west_industry" -> "서부 산업";
+            case "north_industry" -> "북부 산업";
             case "center_technology" -> "중앙 기술";
-            case "east_advanced" -> "동부 고급";
+            case "south_advanced" -> "남부 고급";
             default -> id;
         };
     }
@@ -972,6 +1074,7 @@ public final class MindustryAgentPlugin extends Plugin {
                 : "none"
         ));
         root.put("pvp_fairness", pvpFairness);
+        root.put("rts_battlefield", pvpFairness.getOrDefault("strategic_battlefield", Map.of()));
 
         CoreBuild core = team.core();
         root.put("core", core == null ? null : coreState(core));
