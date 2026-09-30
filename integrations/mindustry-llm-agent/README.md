@@ -1,6 +1,6 @@
 # Mindustry 단일 LLM 기준선
 
-이 저장소는 캡스톤 프로젝트의 1차 실험인 `LLM → 게임 상태 → 판단 → 명령 → 행동` 루프를 구현합니다. 현재 기준 모델은 Ollama의 `deepseek-v4-pro:cloud`이며, Mindustry v159.7 headless 서버 플러그인이 게임 상태와 행동 API를 제공합니다.
+이 저장소는 캡스톤 프로젝트의 1차 실험인 `LLM → 게임 상태 → 판단 → 명령 → 행동` 루프를 구현합니다. 현재 기준 모델은 Ollama의 `deepseek-v4.1-flash:cloud`이며, Mindustry v159.7 headless 서버 플러그인이 게임 상태와 행동 API를 제공합니다.
 
 ## 현재 구현 범위
 
@@ -43,7 +43,7 @@ Mindustry v159.7 headless server
                  ↑
 Python single-agent loop
   └─ Ollama OpenAI-compatible API
-       └─ deepseek-v4-pro:cloud
+       └─ deepseek-v4.1-flash:cloud
 ```
 
 LLM은 건설·자원·방어 배치를 정하는 전략 계층입니다. 서버의 자동 코어 수비기는
@@ -73,9 +73,9 @@ LLM은 건물 카탈로그와 현재 생산망에서 인과관계를 해석하�
 
 - Windows + JDK 17 (Mindustry 공식 빌드 요구사항)
 - Python 3.10 이상(외부 Python 패키지 없음)
-- Ollama가 실행 중이고 `deepseek-v4-pro:cloud`가 연결된 상태
+- Ollama가 실행 중이고 `deepseek-v4.1-flash:cloud`가 연결된 상태
 
-주의: `deepseek-v4-pro:cloud`를 사용하면 구조화된 게임 상태와 프롬프트가 Ollama의 클라우드 서비스로 전송됩니다. 민감한 데이터는 상태나 프롬프트에 넣지 마세요.
+주의: `deepseek-v4.1-flash:cloud`를 사용하면 구조화된 게임 상태와 프롬프트가 Ollama의 클라우드 서비스로 전송됩니다. 민감한 데이터는 상태나 프롬프트에 넣지 마세요.
 
 ## 실행
 
@@ -101,7 +101,7 @@ PowerShell 2에서 먼저 행동 없는 검증을 합니다.
 정상이라면 실제 기준선을 실행합니다.
 
 ```powershell
-.\scripts\run-agent.ps1 -Model deepseek-v4-pro:cloud -ReasoningEffort none -MaxTurns 20
+.\scripts\run-agent.ps1 -Model deepseek-v4.1-flash:cloud -ReasoningEffort none -MaxTurns 20
 ```
 
 ### 게임 화면으로 관전하기
@@ -198,7 +198,7 @@ RTS 모드에 로컬 클라이언트로 접속하면 자동으로 완전한 중�
 `Glacier`는 각 팀의 코어 위치를 불러오는 용도로만 사용합니다. `pvp-start` 직후 코어 이외의
 장애물과 기존 건물을 제거하고 돌 평지로 바꾸므로 이동 경로상의 지형 차이가 없습니다. 기본
 배정은 GLM-5.3-Flash=`sharded`, DeepSeek=`crux`이며 모델은 각각 `glm-5.3-flash:cloud`,
-`deepseek-v4-pro:cloud`입니다. GLM-5.3-Flash는 지원되는 빠른 설정인 `low`, DeepSeek는 `none`으로
+`deepseek-v4.1-flash:cloud`입니다. GLM-5.3-Flash는 지원되는 빠른 설정인 `low`, DeepSeek는 `none`으로
 실행하며, 두 모델의 실제 응답 지연은 각 턴 로그에 그대로 기록됩니다.
 
 `pvp-start`는 구리·납·석탄·모래·티타늄·토륨 패치를 한쪽에 만든 뒤 두 코어 중점을 기준으로
@@ -357,7 +357,7 @@ RTS 실행 직전에는 관측 상태에서 이미 생산 중인 공장·강화 
 | `MINDUSTRY_TEAM_TOKENS` | 빈 값 | PvP 팀별 토큰. 예: `sharded=...;crux=...` |
 | `MINDUSTRY_AUTO_CORE_DEFENSE` | `true` | 에이전트 전용 코어 수비 기체 자동 생성·사격 |
 | `LLM_BASE_URL` | `http://127.0.0.1:11434/v1` | OpenAI 호환 LLM 주소 |
-| `LLM_MODEL` | `deepseek-v4-pro:cloud` | 기준 모델 |
+| `LLM_MODEL` | `deepseek-v4.1-flash:cloud` | 기준 모델 |
 | `LLM_MAX_TOKENS` | `2400` | 한 번의 전략 응답 출력 상한 |
 | `LLM_REASONING_EFFORT` | `none` | 실시간성을 위해 DeepSeek의 장시간 내부 추론 비활성화 |
 | `LLM_JSON_MODE` | `true` | JSON response format 사용 여부 |
