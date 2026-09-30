@@ -457,6 +457,7 @@ def run(config: AgentConfig, *, once: bool, dry_run: bool, max_turns: int | None
             "llm_latency_seconds": llm_result.latency_seconds,
             "llm_usage": llm_result.usage,
             "llm_json_repair_attempted": llm_result.repair_attempted,
+            "llm_validation_skips": list(llm_result.validation_skips),
             "effective_wait_seconds": effective_wait_seconds,
         }
         run_log.write(record)

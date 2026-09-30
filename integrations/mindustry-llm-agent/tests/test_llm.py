@@ -54,6 +54,33 @@ class LlmTest(unittest.TestCase):
         self.assertFalse(result.repair_attempted)
         self.assertEqual(request_json.call_count, 1)
 
+    @patch("mindustry_agent.llm.request_json")
+    def test_keeps_valid_actions_when_repaired_json_has_one_invalid_action(self, request_json) -> None:
+        request_json.side_effect = [
+            response('{"actions":', 4, 2),
+            response(json.dumps({
+                "reasoning_summary": "keep the valid order",
+                "actions": [
+                    {"type": "command_core_unit", "mode": "defend_core"},
+                    {
+                        "type": "resupply_turrets", "ammo": "copper",
+                        "max_items": 20, "reserve_copper": "enough",
+                        "below_fraction": 0.5,
+                    },
+                ],
+                "wait_seconds": 0.5,
+            }), 6, 3),
+        ]
+
+        result = self.llm().decide({}, [])
+
+        self.assertEqual(result.decision["actions"], [
+            {"type": "command_core_unit", "mode": "defend_core"}
+        ])
+        self.assertEqual(len(result.validation_skips), 1)
+        self.assertEqual(result.validation_skips[0]["original_index"], 1)
+        self.assertIn("reserve_copper must be a number", result.validation_skips[0]["message"])
+
     def test_pvp_uses_dedicated_offensive_prompt(self) -> None:
         prompt = system_prompt_for_state({"rules": {"pvp": True, "waves": False}})
         self.assertIn("destroy every opposing core", prompt)

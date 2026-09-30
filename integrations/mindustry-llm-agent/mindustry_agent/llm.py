@@ -6,7 +6,7 @@ import time
 from typing import Any
 
 from .http_client import request_json
-from .policy import extract_json_object, validate_decision
+from .policy import extract_json_object, validate_decision, validate_decision_with_action_skips
 
 
 PVP_MODE_PROMPT = """You are the sole strategic commander of one team in a real-time Mindustry PvP match.
@@ -506,6 +506,7 @@ class LlmResult:
     usage: dict[str, Any]
     raw_text: str
     repair_attempted: bool = False
+    validation_skips: tuple[dict[str, Any], ...] = ()
 
 
 class OpenAICompatibleLlm:
@@ -577,6 +578,7 @@ class OpenAICompatibleLlm:
         )
         raw_text = _message_text(response)
         repair_attempted = False
+        validation_skips: list[dict[str, Any]] = []
         responses = [response]
         try:
             decision = validate_decision(extract_json_object(raw_text))
@@ -622,10 +624,16 @@ class OpenAICompatibleLlm:
             try:
                 decision = validate_decision(extract_json_object(raw_text))
             except ValueError as repair_error:
-                preview = raw_text[:1000].replace("\r", " ").replace("\n", " ")
-                raise ValueError(
-                    f"{repair_error}; repaired model output preview={preview!r}"
-                ) from repair_error
+                repaired_object = extract_json_object(raw_text)
+                try:
+                    decision, validation_skips = validate_decision_with_action_skips(
+                        repaired_object
+                    )
+                except ValueError:
+                    preview = raw_text[:1000].replace("\r", " ").replace("\n", " ")
+                    raise ValueError(
+                        f"{repair_error}; repaired model output preview={preview!r}"
+                    ) from repair_error
 
         latency = time.perf_counter() - started
         usage: dict[str, Any] = {}
@@ -642,6 +650,7 @@ class OpenAICompatibleLlm:
             usage=usage,
             raw_text=raw_text,
             repair_attempted=repair_attempted,
+            validation_skips=tuple(validation_skips),
         )
 
 def _message_text(response: dict[str, Any]) -> str:

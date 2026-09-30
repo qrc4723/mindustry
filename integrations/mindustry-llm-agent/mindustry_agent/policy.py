@@ -377,6 +377,41 @@ def validate_decision(raw: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def validate_decision_with_action_skips(
+    raw: dict[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Preserve valid actions when a repaired model response has one bad action.
+
+    This is deliberately only a structural fallback: it never invents or changes an
+    action. Callers can log the rejected action and its exact validation error.
+    """
+    actions = raw.get("actions", [])
+    if not isinstance(actions, list):
+        raise DecisionError("actions must be an array.")
+    if len(actions) > MAX_ACTIONS:
+        raise DecisionError(f"At most {MAX_ACTIONS} actions are allowed.")
+
+    without_actions = dict(raw)
+    without_actions["actions"] = []
+    normalized = validate_decision(without_actions)
+    skipped: list[dict[str, Any]] = []
+    for index, action in enumerate(actions):
+        candidate = dict(raw)
+        candidate["actions"] = [action]
+        try:
+            validated = validate_decision(candidate)
+        except ValueError as error:
+            skipped.append({
+                "original_index": index,
+                "action": action,
+                "reason": "invalid_model_action_after_json_repair",
+                "message": str(error).replace("actions[0]", f"actions[{index}]"),
+            })
+            continue
+        normalized["actions"].extend(validated["actions"])
+    return normalized, skipped
+
+
 def _short_string_list(value: Any, limit: int) -> list[str]:
     if not isinstance(value, list):
         raise DecisionError("strategy list fields must be arrays.")
