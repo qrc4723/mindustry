@@ -177,6 +177,7 @@ public final class MindustryAgentPlugin extends Plugin {
     private double nextRtsControlLabelTick;
     private double nextSpectatorHudTick;
     private boolean spectatorHudVisible;
+    private String gameEndReason = "";
 
     @Override
     public void init() {
@@ -189,6 +190,7 @@ public final class MindustryAgentPlugin extends Plugin {
             episodeId = UUID.randomUUID().toString();
             gameResult = "running";
             gameWinner = null;
+            gameEndReason = "";
             wavesSeen.set(0);
             teamAgentStates.clear();
             approvedConveyorPlans.clear();
@@ -228,12 +230,14 @@ public final class MindustryAgentPlugin extends Plugin {
             }
         });
         Events.on(GameOverEvent.class, event -> {
+            if (gameEndReason.isBlank()) gameEndReason = "enemy_core_destroyed";
             gameWinner = event.winner;
             gameResult = event.winner == null ? "ended" : event.winner.name + "_won";
             Map<String, Object> completed = new LinkedHashMap<>();
             completed.put("episode_id", episodeId);
             completed.put("winner", event.winner == null ? null : event.winner.name);
             completed.put("result", gameResult);
+            completed.put("victory_reason", gameEndReason);
             completed.put("ended_at", Instant.now().toString());
             completed.put("ended_tick", Vars.state == null ? null : Vars.state.tick);
             previousEpisodeResult = completed;
@@ -645,6 +649,22 @@ public final class MindustryAgentPlugin extends Plugin {
         int openingHalfHeight = 7;
         int neutralWallTiles = 0;
 
+        // Visually separate the three routes and the two deployment zones without changing movement speed.
+        // This makes the strategic topology legible to a human spectator while preserving identical mechanics.
+        for (int laneCenter : laneCenters) {
+            paintFloorRect(0, laneCenter - openingHalfHeight, Vars.world.width() - 1,
+                laneCenter + openingHalfHeight, Blocks.metalFloor);
+            paintFloorRect(dividerLeft - 10, laneCenter - 5, dividerRight + 10,
+                laneCenter + 5, Blocks.darkPanel1);
+        }
+        paintFloorRect(sourceCore.tileX() - 12, sourceCore.tileY() - 15,
+            sourceCore.tileX() + 12, sourceCore.tileY() + 15, Blocks.metalFloor2);
+        paintFloorRect(targetCore.tileX() - 12, targetCore.tileY() - 15,
+            targetCore.tileX() + 12, targetCore.tileY() + 15, Blocks.metalFloor2);
+
+        // A broken central ridge creates three crossings. It is not one continuous visual divider:
+        // the additional point-reflected cover below creates staging pockets, flank screens and
+        // offset firing lines while leaving every lane connected for ground units.
         for (int x = dividerLeft; x <= dividerRight; x++) {
             for (int y = 0; y < Vars.world.height(); y++) {
                 boolean laneOpening = false;
@@ -662,31 +682,84 @@ public final class MindustryAgentPlugin extends Plugin {
             }
         }
 
+        int tacticalCoverTiles = 0;
+        tacticalCoverTiles += placeSymmetricTerrainRect(46, 24, 52, 30, Blocks.stoneWall, sumX, sumY);
+        tacticalCoverTiles += placeSymmetricTerrainRect(46, 50, 52, 56, Blocks.stoneWall, sumX, sumY);
+        tacticalCoverTiles += placeSymmetricTerrainRect(64, 34, 69, 37, Blocks.stoneWall, sumX, sumY);
+        tacticalCoverTiles += placeSymmetricTerrainRect(69, 61, 74, 64, Blocks.stoneWall, sumX, sumY);
+        tacticalCoverTiles += placeSymmetricTerrainRect(69, 16, 74, 19, Blocks.stoneWall, sumX, sumY);
+
+        // Small cover pillars around (not on) each objective prevent every engagement from becoming
+        // a single unobstructed firing line. The center tile and capture circle remain traversable.
+        for (int laneCenter : laneCenters) {
+            tacticalCoverTiles += placeTerrainRect(dividerLeft - 8, laneCenter - 5,
+                dividerLeft - 6, laneCenter - 2, Blocks.stoneWall);
+            tacticalCoverTiles += placeTerrainRect(dividerRight + 6, laneCenter + 2,
+                dividerRight + 8, laneCenter + 5, Blocks.stoneWall);
+        }
+
         List<Map<String, Object>> lanes = new ArrayList<>();
         lanes.add(strategicLane(
             "north_industry", "north", dividerLeft, dividerRight, laneCenters[0], openingHalfHeight,
-            "longer ground flank around the north divider; its objective pays basic industry items"
+            "wide industrial flank with offset cover and room to stage or rotate before the crossing"
         ));
         lanes.add(strategicLane(
             "center_technology", "center", dividerLeft, dividerRight, laneCenters[1], openingHalfHeight,
-            "shortest direct ground crossing and therefore the most immediate route between cores"
+            "short direct crossing with staggered central cover; fastest pressure route but exposed to crossfire"
         ));
         lanes.add(strategicLane(
             "south_advanced", "south", dividerLeft, dividerRight, laneCenters[2], openingHalfHeight,
-            "longer ground flank around the south divider; its objective pays advanced items"
+            "wide advanced flank with offset cover and a separate approach from the central firing line"
         ));
 
-        return Map.of(
-            "style", "symmetric_three_lane_showcase",
-            "ground_route_choices", 3,
-            "neutral_divider_x_min", dividerLeft,
-            "neutral_divider_x_max", dividerRight,
-            "neutral_wall_tiles", neutralWallTiles,
-            "wall_behavior", "indestructible neutral terrain that redirects ground units",
-            "air_behavior", "flying units ignore the neutral divider and can cross between lanes",
-            "lanes", lanes,
-            "strategy_contract", "lane facts are observations, not a preferred opening, force split, or attack order"
+        return Map.ofEntries(
+            Map.entry("style", "symmetric_three_lane_tactical_showcase_v2"),
+            Map.entry("ground_route_choices", 3),
+            Map.entry("neutral_divider_x_min", dividerLeft),
+            Map.entry("neutral_divider_x_max", dividerRight),
+            Map.entry("neutral_wall_tiles", neutralWallTiles),
+            Map.entry("tactical_cover_tiles", tacticalCoverTiles),
+            Map.entry("wall_behavior", "indestructible neutral terrain that redirects ground units"),
+            Map.entry("air_behavior", "flying units ignore the neutral divider and can cross between lanes"),
+            Map.entry("lanes", lanes),
+            Map.entry("tactical_features", List.of(
+                "three visually distinct lane corridors",
+                "point-reflected staging pockets and offset firing lines",
+                "objective-side cover with open capture centers",
+                "open home-side rotation space between lanes"
+            )),
+            Map.entry("strategy_contract", "lane facts are observations, not a preferred opening, force split, or attack order")
         );
+    }
+
+    private void paintFloorRect(int minX, int minY, int maxX, int maxY, Block floor) {
+        for (int x = Math.max(0, minX); x <= Math.min(Vars.world.width() - 1, maxX); x++) {
+            for (int y = Math.max(0, minY); y <= Math.min(Vars.world.height() - 1, maxY); y++) {
+                Tile tile = Vars.world.tile(x, y);
+                if (tile != null) tile.setFloor(floor.asFloor());
+            }
+        }
+    }
+
+    private int placeSymmetricTerrainRect(
+        int minX, int minY, int maxX, int maxY, Block block, int sumX, int sumY
+    ) {
+        int placed = placeTerrainRect(minX, minY, maxX, maxY, block);
+        placed += placeTerrainRect(sumX - maxX, sumY - maxY, sumX - minX, sumY - minY, block);
+        return placed;
+    }
+
+    private int placeTerrainRect(int minX, int minY, int maxX, int maxY, Block block) {
+        int placed = 0;
+        for (int x = Math.max(0, minX); x <= Math.min(Vars.world.width() - 1, maxX); x++) {
+            for (int y = Math.max(0, minY); y <= Math.min(Vars.world.height() - 1, maxY); y++) {
+                Tile tile = Vars.world.tile(x, y);
+                if (tile == null || tile.build instanceof CoreBuild) continue;
+                tile.setBlock(block);
+                placed++;
+            }
+        }
+        return placed;
     }
 
     private Map<String, Object> strategicLane(
@@ -771,7 +844,8 @@ public final class MindustryAgentPlugin extends Plugin {
             Map.of(Items.thorium, 35, Items.plastanium, 25, Items.phaseFabric, 18, Items.surgeAlloy, 18));
         nextRtsControlIncomeTick = Vars.state.tick + RTS_CONTROL_INCOME_INTERVAL_TICKS;
         Map<String, Object> enriched = new LinkedHashMap<>(pvpFairness);
-        enriched.put("strategic_control_points", "three neutral symmetric-access objectives; combat-unit presence captures them and each owned point grants its disclosed item bundle every 5 seconds");
+        enriched.put("strategic_control_points", "three neutral symmetric-access objectives; combat-unit presence captures them, each owned point grants its disclosed item bundle every 5 seconds, and simultaneous ownership of all three wins the match");
+        enriched.put("victory_conditions", List.of("own_all_three_control_points", "destroy_every_enemy_core"));
         enriched.put("starting_stockpile_is_finite", true);
         pvpFairness = enriched;
     }
@@ -831,6 +905,22 @@ public final class MindustryAgentPlugin extends Plugin {
                 Log.info("[LLM bridge] @ captured RTS control point @", team.name, point.id);
             }
         }
+        Team territorialWinner = null;
+        for (Team team : configuredAgentTeams()) {
+            boolean ownsAll = !rtsControlPoints.isEmpty()
+                && rtsControlPoints.stream().allMatch(point -> point.owner == team);
+            if (ownsAll) {
+                territorialWinner = team;
+                break;
+            }
+        }
+        if (territorialWinner != null) {
+            gameEndReason = "all_three_control_points_captured";
+            Vars.state.gameOver = true;
+            Log.info("[LLM bridge] @ won by controlling all three RTS objectives", territorialWinner.name);
+            Events.fire(new GameOverEvent(territorialWinner));
+            return;
+        }
         if (Vars.state.tick < nextRtsControlIncomeTick) return;
         while (nextRtsControlIncomeTick <= Vars.state.tick) {
             nextRtsControlIncomeTick += RTS_CONTROL_INCOME_INTERVAL_TICKS;
@@ -866,6 +956,7 @@ public final class MindustryAgentPlugin extends Plugin {
             row.put("income_items", namedCost(point.income));
             row.put("income_ticks_paid", point.incomeTicks);
             row.put("captures", point.captures);
+            row.put("victory_rule", "own_all_three_control_points_simultaneously");
             CoreBuild ownCore = observer.core();
             row.put("distance_from_own_core_tiles", ownCore == null ? null : Math.sqrt(
                 distance2(point.x, point.y, ownCore.tileX(), ownCore.tileY())));
@@ -1070,9 +1161,15 @@ public final class MindustryAgentPlugin extends Plugin {
                 ? "item turrets and walls use standard construction cost/time; resupply_turrets transfers explicitly chosen compatible ammunition from the finite core stockpile without belts"
                 : "native Mindustry turret supply and wall mechanics",
             "territory_mechanic", "stockpile_rts_pvp".equals(gameModeVariant)
-                ? "combat units capture neutral map objectives; owned objectives provide their disclosed periodic item income"
+                ? "combat units capture neutral map objectives; owned objectives provide periodic income and owning all three wins immediately"
                 : "none"
         ));
+        if ("stockpile_rts_pvp".equals(gameModeVariant)) {
+            root.put("victory_conditions", List.of(
+                "own_all_three_control_points_simultaneously",
+                "destroy_every_enemy_core"
+            ));
+        }
         root.put("pvp_fairness", pvpFairness);
         root.put("rts_battlefield", pvpFairness.getOrDefault("strategic_battlefield", Map.of()));
 
@@ -3427,7 +3524,9 @@ public final class MindustryAgentPlugin extends Plugin {
 
         StringBuilder hud = new StringBuilder("[accent]LLM PvP 관전[]");
         if (gameWinner != null) {
-            hud.append("\n[accent]경기 종료 — ").append(teamMarkup(gameWinner)).append(" 승리[]");
+            hud.append("\n[accent]경기 종료 — ").append(teamMarkup(gameWinner)).append(" 승리[]")
+                .append(" (all_three_control_points_captured".equals(gameEndReason)
+                    ? "3개 거점 완전 점령" : "적 코어 파괴").append(')');
         }
         appendSpectatorTeam(hud, Team.sharded, "[sky]");
         appendSpectatorTeam(hud, Team.crux, "[scarlet]");
@@ -4809,10 +4908,10 @@ public final class MindustryAgentPlugin extends Plugin {
         Groups.unit.each(unit -> {
             if (unit.dead() || unit.health <= 0f) deadUnits.add(unit);
         });
-        // Flying units normally remain as a falling wreck entity for a short time. In the RTS
-        // evaluation that looks like a surviving unit and can retain stale command/squad state,
-        // so remove the authoritative entity on the first update after death.
-        deadUnits.each(Unit::remove);
+        // Flying units normally remain as falling wreck entities. A plain server-side remove() is
+        // insufficient because clients can retain the last synchronized sprite as a ghost. Use the
+        // authoritative destroy RPC so every client marks the entity removed immediately.
+        deadUnits.each(unit -> Call.unitDestroy(unit.id));
     }
 
     private Unit findOwnedCommandableUnit(Team team, int id) {

@@ -571,6 +571,10 @@ def _pvp_objective_state(state: dict[str, Any]) -> dict[str, Any]:
         isinstance(state.get("game_mode_variant"), dict)
         and state["game_mode_variant"].get("id") == "stockpile_rts_pvp"
     )
+    victory_condition = (
+        "own_all_three_control_points_or_destroy_every_enemy_core"
+        if stockpile_rts else "destroy_every_enemy_core"
+    )
     factory_rows = []
     for building in factories[:20]:
         row = {
@@ -587,7 +591,7 @@ def _pvp_objective_state(state: dict[str, Any]) -> dict[str, Any]:
         factory_rows.append(row)
     return {
         "meaning": "Factual PvP scoreboard and current offensive assets; no build order or readiness score is imposed.",
-        "victory_condition": "destroy_every_enemy_core",
+        "victory_condition": victory_condition,
         "own_cores_remaining": len(state.get("cores", [])),
         "enemy_cores_remaining": len(enemy_cores),
         "enemy_cores": enemy_cores,

@@ -546,6 +546,10 @@ class PolicyTest(unittest.TestCase):
         }
         compact = compact_state(state)
         self.assertEqual(compact["game_mode_variant"]["id"], "stockpile_rts_pvp")
+        self.assertEqual(
+            compact["pvp_objective"]["victory_condition"],
+            "own_all_three_control_points_or_destroy_every_enemy_core",
+        )
         self.assertEqual(compact["rts_training_queues"][0]["remaining"], 3)
         self.assertEqual(compact["rts_upgrade_queues"][0]["remaining"], 1)
         self.assertEqual(compact["rts_construction_queue"][0]["status"], "queued")

@@ -44,8 +44,9 @@ PvP strategic frame (causal guidance, never a build order):
 
 STOCKPILE_RTS_PVP_MODE_PROMPT = """You are the sole strategic commander of one team in a strategic real-time
 Mindustry PvP match designed to evaluate army composition, territorial control, production capacity, defense, and
-multi-squad maneuver without conveyor puzzles. This is separate from economy PvP and wave survival. Destroy every
-opposing core while preserving at least one of your own. The opponent receives the identical prompt, battlefield,
+multi-squad maneuver without conveyor puzzles. This is separate from economy PvP and wave survival. Win by either
+simultaneously owning all three neutral control points or destroying every opposing core while preserving at least
+one of your own. The opponent receives the identical prompt, battlefield,
 finite starting stockpile, neutral control objectives, action contract, and timing rules.
 
 Stockpile RTS strategic frame (causal guidance, never a build order):
@@ -54,14 +55,15 @@ Stockpile RTS strategic frame (causal guidance, never a build order):
   income from captured rts_control_points.
 - Construction and training consume the finite items shown in core.items. Decide how much to invest in factories,
   defenses, unit composition, parallel production, replacements, and retained reserves from the actual costs.
-- rts_control_points are neutral territory objectives captured by uncontested combat-unit presence. Each point shows
-  its exact capture radius, owner/progress, local force presence, and periodic item income. Decide which points are
+- rts_control_points are neutral territory objectives captured by uncontested combat-unit presence. Simultaneous
+  ownership of all three wins the match immediately. Each point shows its exact capture radius, owner/progress,
+  local force presence, and periodic item income. Decide which points are
   worth contesting, how many squads to commit, and whether income, denial, defense, or a core attack has greater
   current value. They are opportunities, not a prescribed opening or capture order.
 - rts_battlefield describes the current arena. In the open baseline, ground forces can approach directly. In the
   three-lane showcase, indestructible neutral terrain creates north, center, and south ground crossings around the
-  listed coordinates. The center is the shortest route, side lanes are longer flanks with different objectives, and
-  flying units can cross the divider freely. Decide whether to concentrate, split, feint, defend a choke, contest an
+  listed coordinates, with point-reflected staging pockets, objective-side cover, and offset firing lines. Flying
+  units can cross terrain freely. Decide whether to concentrate, split, feint, rotate lanes, defend a choke, contest an
   income point, or bypass terrain from the current forces and opponent. No lane, force ratio, or opening is preferred.
 - Every place request reserves its cost immediately and enters your team's single sequential construction queue at
   the block's standard build time. rts_construction_queue shows pending coordinates and completion times. A long JSON
