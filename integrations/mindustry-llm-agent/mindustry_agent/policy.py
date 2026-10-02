@@ -575,6 +575,33 @@ def _pvp_objective_state(state: dict[str, Any]) -> dict[str, Any]:
         "own_all_three_control_points_or_destroy_every_enemy_core"
         if stockpile_rts else "destroy_every_enemy_core"
     )
+    territorial_victory: dict[str, Any] | None = None
+    if stockpile_rts:
+        self_team = state.get("self_team") if isinstance(state.get("self_team"), dict) else {}
+        self_name = str(self_team.get("name", ""))
+        points = [
+            point for point in state.get("rts_control_points", [])
+            if isinstance(point, dict)
+        ]
+        owner_counts: dict[str, int] = {}
+        for point in points:
+            owner = str(point.get("owner", "neutral"))
+            owner_counts[owner] = owner_counts.get(owner, 0) + 1
+        own_points = owner_counts.get(self_name, 0)
+        enemy_points = max(
+            (count for owner, count in owner_counts.items()
+             if owner not in {self_name, "neutral", "None", ""}),
+            default=0,
+        )
+        territorial_victory = {
+            "total_control_points": len(points),
+            "owned_by_self": own_points,
+            "most_owned_by_one_opponent": enemy_points,
+            "neutral": owner_counts.get("neutral", 0),
+            "points_needed_for_self_instant_win": max(0, len(points) - own_points),
+            "points_needed_for_opponent_instant_win": max(0, len(points) - enemy_points),
+            "ownership_by_team": owner_counts,
+        }
     factory_rows = []
     for building in factories[:20]:
         row = {
@@ -592,6 +619,7 @@ def _pvp_objective_state(state: dict[str, Any]) -> dict[str, Any]:
     return {
         "meaning": "Factual PvP scoreboard and current offensive assets; no build order or readiness score is imposed.",
         "victory_condition": victory_condition,
+        "territorial_victory": territorial_victory,
         "own_cores_remaining": len(state.get("cores", [])),
         "enemy_cores_remaining": len(enemy_cores),
         "enemy_cores": enemy_cores,

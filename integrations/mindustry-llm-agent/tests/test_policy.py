@@ -470,6 +470,12 @@ class PolicyTest(unittest.TestCase):
                 "id": "stockpile_rts_pvp", "stockpile_rts": True,
                 "decision_refresh_seconds": 0.5,
             },
+            "self_team": {"name": "sharded"},
+            "rts_control_points": [
+                {"id": "north_industry", "owner": "sharded"},
+                {"id": "center_technology", "owner": "crux"},
+                {"id": "south_advanced", "owner": "neutral"},
+            ],
             "core": {"items": {"lead": 100, "silicon": 80}},
             "buildings": [{
                 "block": "ground-factory", "x": 20, "y": 30,
@@ -550,6 +556,11 @@ class PolicyTest(unittest.TestCase):
             compact["pvp_objective"]["victory_condition"],
             "own_all_three_control_points_or_destroy_every_enemy_core",
         )
+        territory = compact["pvp_objective"]["territorial_victory"]
+        self.assertEqual(territory["owned_by_self"], 1)
+        self.assertEqual(territory["most_owned_by_one_opponent"], 1)
+        self.assertEqual(territory["points_needed_for_self_instant_win"], 2)
+        self.assertEqual(territory["points_needed_for_opponent_instant_win"], 2)
         self.assertEqual(compact["rts_training_queues"][0]["remaining"], 3)
         self.assertEqual(compact["rts_upgrade_queues"][0]["remaining"], 1)
         self.assertEqual(compact["rts_construction_queue"][0]["status"], "queued")
