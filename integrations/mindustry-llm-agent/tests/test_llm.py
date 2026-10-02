@@ -117,6 +117,8 @@ class LlmTest(unittest.TestCase):
         self.assertIn("recent_unit_command_receipts", prompt)
         self.assertIn("distance progress", prompt)
         self.assertIn("There are deliberately no mineable resources", prompt)
+        self.assertIn("12,000 of every non-hidden item", prompt)
+        self.assertIn("should not be delayed merely to conserve resources", prompt)
         self.assertIn("train_units", prompt)
         self.assertIn("upgrade_units", prompt)
         self.assertIn("rts_training_queues", prompt)

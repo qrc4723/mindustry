@@ -146,6 +146,7 @@ public final class MindustryAgentPlugin extends Plugin {
     private static final double RTS_CONTROL_CAPTURE_RADIUS_TILES = 11d;
     private static final double RTS_CONTROL_CAPTURE_SECONDS = 12d;
     private static final double RTS_CONTROL_INCOME_INTERVAL_TICKS = 300d;
+    private static final int RTS_ABUNDANT_ITEM_AMOUNT = 12000;
     private static final int[][] DIRECTIONS = {{1, 0}, {0, 1}, {-1, 0}, {0, -1}};
 
     private final Gson gson = new GsonBuilder().disableHtmlEscaping().create();
@@ -635,7 +636,7 @@ public final class MindustryAgentPlugin extends Plugin {
         result.put("strategic_battlefield", battlefield);
         result.put("note", includeOrePatches
             ? "Ore does not deplete; both sides have point-reflected mineable tiles on an obstacle-free arena."
-            : "No mineable resources exist; both sides receive the same finite core stockpile and use RTS training queues.");
+            : "No mineable resources exist; both sides receive the same abundant stockpile of every non-hidden item and use RTS training queues.");
         return result;
     }
 
@@ -795,20 +796,9 @@ public final class MindustryAgentPlugin extends Plugin {
 
     private void applyEqualRtsStockpiles(Team... teams) {
         Map<Item, Integer> stockpile = new LinkedHashMap<>();
-        stockpile.put(Items.copper, 6000);
-        stockpile.put(Items.lead, 6000);
-        stockpile.put(Items.metaglass, 1600);
-        stockpile.put(Items.graphite, 3500);
-        stockpile.put(Items.coal, 1200);
-        stockpile.put(Items.sand, 1200);
-        stockpile.put(Items.silicon, 3200);
-        stockpile.put(Items.titanium, 2200);
-        stockpile.put(Items.thorium, 1200);
-        stockpile.put(Items.plastanium, 800);
-        stockpile.put(Items.phaseFabric, 600);
-        stockpile.put(Items.surgeAlloy, 600);
-        stockpile.put(Items.pyratite, 1000);
-        stockpile.put(Items.blastCompound, 1000);
+        for (Item item : Vars.content.items()) {
+            if (!item.hidden) stockpile.put(item, RTS_ABUNDANT_ITEM_AMOUNT);
+        }
         for (Team team : teams) {
             CoreBuild core = team.core();
             if (core == null) continue;
@@ -819,9 +809,11 @@ public final class MindustryAgentPlugin extends Plugin {
         enriched.put("equal_core_stockpile", named);
         enriched.put("resource_tile_counts_equal", true);
         enriched.put("rts_construction", "each team has one identical sequential construction queue using standard block build times; strategic block choices are unrestricted");
-        enriched.put("rts_training", "factory slots consume a finite starting stockpile plus income from controlled map objectives, with standard unit-plan item costs and production time");
+        enriched.put("rts_training", "factory slots consume standard unit-plan item costs from an identical abundant all-item stockpile; production time and slot availability remain binding");
         enriched.put("rts_upgrading", "reconstructors consume standard item costs and time; input units are committed to an upgrade queue without belts, payload conveyors, liquids, or power");
-        enriched.put("rts_defense", "item-ammunition turrets and walls use standard construction cost/time; turret ammunition is a finite strategic expense transferred from the core only by an explicit resupply_turrets action");
+        enriched.put("rts_defense", "item-ammunition turrets and walls use standard construction cost/time; compatible ammunition is transferred from the abundant core stockpile only by an explicit resupply_turrets action");
+        enriched.put("resource_scarcity_expected", false);
+        enriched.put("all_non_hidden_items_per_core", RTS_ABUNDANT_ITEM_AMOUNT);
         pvpFairness = enriched;
     }
 
@@ -846,7 +838,7 @@ public final class MindustryAgentPlugin extends Plugin {
         Map<String, Object> enriched = new LinkedHashMap<>(pvpFairness);
         enriched.put("strategic_control_points", "three neutral symmetric-access objectives; combat-unit presence captures them, each owned point grants its disclosed item bundle every 5 seconds, and simultaneous ownership of all three wins the match");
         enriched.put("victory_conditions", List.of("own_all_three_control_points", "destroy_every_enemy_core"));
-        enriched.put("starting_stockpile_is_finite", true);
+        enriched.put("starting_stockpile_is_finite_but_abundant", true);
         pvpFairness = enriched;
     }
 
@@ -1158,7 +1150,7 @@ public final class MindustryAgentPlugin extends Plugin {
                 ? "build unit factories and reconstructors; train_units and upgrade_units enforce standard item costs and production times against the core stockpile"
                 : "native Mindustry factory inputs and power",
             "defense_mechanic", "stockpile_rts_pvp".equals(gameModeVariant)
-                ? "item turrets and walls use standard construction cost/time; resupply_turrets transfers explicitly chosen compatible ammunition from the finite core stockpile without belts"
+                ? "item turrets and walls use standard construction cost/time; resupply_turrets transfers chosen compatible ammunition from the abundant core stockpile without belts"
                 : "native Mindustry turret supply and wall mechanics",
             "territory_mechanic", "stockpile_rts_pvp".equals(gameModeVariant)
                 ? "combat units capture neutral map objectives; owned objectives provide periodic income and owning all three wins immediately"

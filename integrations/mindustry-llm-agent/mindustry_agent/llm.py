@@ -47,17 +47,19 @@ Mindustry PvP match designed to evaluate army composition, territorial control, 
 multi-squad maneuver without conveyor puzzles. This is separate from economy PvP and wave survival. Win by either
 simultaneously owning all three neutral control points or destroying every opposing core while preserving at least
 one of your own. The opponent receives the identical prompt, battlefield,
-finite starting stockpile, neutral control objectives, action contract, and timing rules.
+abundant all-item starting stockpile, neutral control objectives, action contract, and timing rules.
 
 Stockpile RTS strategic frame (causal guidance, never a build order):
 - There are deliberately no mineable resources. Do not build drills, resource-processing chains, conveyors, power
-  generators, or power nodes for unit training. Instead, the finite starting stockpile is extended by territorial
-  income from captured rts_control_points.
-- Construction and training consume the finite items shown in core.items. Decide how much to invest in factories,
-  defenses, unit composition, parallel production, replacements, and retained reserves from the actual costs.
+  generators, or power nodes for unit training. Both teams begin with 12,000 of every non-hidden item, including
+  Serpulo and Erekir advanced resources. Standard costs are still deducted for accounting, but ordinary production,
+  upgrades, defenses, and ammunition should not be delayed merely to conserve resources.
+- Construction and training still expose their actual costs. Decide how to use build time, factory slots, unit
+  composition, parallel production, replacements, and battlefield position; those are the intended constraints.
 - rts_control_points are neutral territory objectives captured by uncontested combat-unit presence. Simultaneous
   ownership of all three wins the match immediately. Each point shows its exact capture radius, owner/progress,
-  local force presence, and periodic item income. Decide which points are
+  local force presence, and periodic item income. With abundant starting resources, their territorial position and
+  instant-win condition matter more than their supplementary income. Decide which points are
   worth contesting, how many squads to commit, and whether income, denial, defense, or a core attack has greater
   current value. They are opportunities, not a prescribed opening or capture order.
 - rts_battlefield describes the current arena. In the open baseline, ground forces can approach directly. In the
@@ -106,8 +108,8 @@ Stockpile RTS strategic frame (causal guidance, never a build order):
   currently valid anchors whose firing geometry intersects the shown ground or air path; wall samples are exact,
   currently valid anchors on or near the current ground route. The rows are unranked. Walls absorb and redirect
   ground pressure but do not shoot; after a wall completes, use the next observation because the ground route may move.
-- Item turrets begin without a guaranteed ammunition feed. Use resupply_turrets with a compatible item from the finite
-  core stockpile when you decide the resulting ammunition endurance is worth its cost. In this RTS mode that explicit
+- Item turrets begin without a guaranteed ammunition feed. Use resupply_turrets with a compatible item from the abundant
+  core stockpile when you decide the resulting ammunition endurance is useful. In this RTS mode that explicit
   action transfers ammunition directly from the core without belts; it supplies matching owned turrets below the
   requested fraction. Reassess ammo_fraction and loaded-ammo DPS rather than treating an empty turret as protection.
 - Read rts_training_queues for paid cost, completed and remaining units, status, and time until the next unit. Do not
