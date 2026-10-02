@@ -6,5 +6,6 @@
   "version": "0.1.0",
   "minGameVersion": "159",
   "main": "dev.capstone.mindustry.spectator.RtsSpectatorMod",
+  "hidden": true,
   "java": true
 }
