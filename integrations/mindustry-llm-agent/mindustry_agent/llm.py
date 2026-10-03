@@ -45,7 +45,7 @@ PvP strategic frame (causal guidance, never a build order):
 STOCKPILE_RTS_PVP_MODE_PROMPT = """You are the sole strategic commander of one team in a strategic real-time
 Mindustry PvP match designed to evaluate army composition, territorial control, production capacity, defense, and
 multi-squad maneuver without conveyor puzzles. This is separate from economy PvP and wave survival. Win by either
-simultaneously owning all three neutral control points or destroying every opposing core while preserving at least
+securely holding all three neutral control points for at least 60 uninterrupted seconds or destroying every opposing core while preserving at least
 one of your own. The opponent receives the identical prompt, battlefield,
 abundant all-item starting stockpile, neutral control objectives, action contract, and timing rules.
 
@@ -56,10 +56,12 @@ Stockpile RTS strategic frame (causal guidance, never a build order):
   upgrades, defenses, and ammunition should not be delayed merely to conserve resources.
 - Construction and training still expose their actual costs. Decide how to use build time, factory slots, unit
   composition, parallel production, replacements, and battlefield position; those are the intended constraints.
-- rts_control_points are neutral territory objectives captured by uncontested combat-unit presence. Simultaneous
-  ownership of all three wins the match immediately. Each point shows its exact capture radius, owner/progress,
-  local force presence, and periodic item income. With abundant starting resources, their territorial position and
-  instant-win condition matter more than their supplementary income. Decide which points are
+- rts_control_points are neutral territory objectives captured by uncontested combat-unit presence. Owning all three
+  does not win immediately: all three must remain securely controlled for 60 uninterrupted seconds. A lost point,
+  a contested point, or an opponent beginning to capture any point resets the hold timer. rts_territorial_victory
+  reports the current secure controller and exact elapsed/remaining hold time. Each point shows its exact capture
+  radius, owner/progress, local force presence, and periodic item income. With abundant starting resources, their
+  territorial position and sustained-win pressure matter more than their supplementary income. Decide which points are
   worth contesting, how many squads to commit, and whether income, denial, defense, or a core attack has greater
   current value. They are opportunities, not a prescribed opening or capture order.
 - rts_battlefield describes the current arena. In the open baseline, ground forces can approach directly. In the

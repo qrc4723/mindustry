@@ -146,6 +146,7 @@ public final class MindustryAgentPlugin extends Plugin {
     private static final double RTS_CONTROL_CAPTURE_RADIUS_TILES = 11d;
     private static final double RTS_CONTROL_CAPTURE_SECONDS = 12d;
     private static final double RTS_CONTROL_INCOME_INTERVAL_TICKS = 300d;
+    private static final double RTS_TOTAL_CONTROL_HOLD_SECONDS = 60d;
     private static final int RTS_ABUNDANT_ITEM_AMOUNT = 12000;
     private static final int[][] DIRECTIONS = {{1, 0}, {0, 1}, {-1, 0}, {0, -1}};
 
@@ -176,6 +177,8 @@ public final class MindustryAgentPlugin extends Plugin {
     private final List<RtsControlPoint> rtsControlPoints = new ArrayList<>();
     private double nextRtsControlIncomeTick;
     private double nextRtsControlLabelTick;
+    private Team rtsTotalControlTeam;
+    private double rtsTotalControlStartTick = -1d;
     private double nextSpectatorHudTick;
     private boolean spectatorHudVisible;
     private String gameEndReason = "";
@@ -203,6 +206,8 @@ public final class MindustryAgentPlugin extends Plugin {
             rtsControlPoints.clear();
             nextRtsControlIncomeTick = 0d;
             nextRtsControlLabelTick = 0d;
+            rtsTotalControlTeam = null;
+            rtsTotalControlStartTick = -1d;
             nextSpectatorHudTick = 0d;
             spectatorHudVisible = false;
             restartScheduled = false;
@@ -819,6 +824,8 @@ public final class MindustryAgentPlugin extends Plugin {
 
     private void initializeRtsControlPoints(Team sourceTeam, Team targetTeam) {
         rtsControlPoints.clear();
+        rtsTotalControlTeam = null;
+        rtsTotalControlStartTick = -1d;
         CoreBuild source = sourceTeam.core(), target = targetTeam.core();
         if (source == null || target == null) return;
         double centerX = (source.tileX() + target.tileX()) / 2d;
@@ -836,8 +843,8 @@ public final class MindustryAgentPlugin extends Plugin {
             Map.of(Items.thorium, 35, Items.plastanium, 25, Items.phaseFabric, 18, Items.surgeAlloy, 18));
         nextRtsControlIncomeTick = Vars.state.tick + RTS_CONTROL_INCOME_INTERVAL_TICKS;
         Map<String, Object> enriched = new LinkedHashMap<>(pvpFairness);
-        enriched.put("strategic_control_points", "three neutral symmetric-access objectives; combat-unit presence captures them, each owned point grants its disclosed item bundle every 5 seconds, and simultaneous ownership of all three wins the match");
-        enriched.put("victory_conditions", List.of("own_all_three_control_points", "destroy_every_enemy_core"));
+        enriched.put("strategic_control_points", "three neutral symmetric-access objectives; combat-unit presence captures them, each owned point grants its disclosed item bundle every 5 seconds, and secure simultaneous control of all three for 60 uninterrupted seconds wins the match");
+        enriched.put("victory_conditions", List.of("securely_hold_all_three_control_points_for_60_seconds", "destroy_every_enemy_core"));
         enriched.put("starting_stockpile_is_finite_but_abundant", true);
         pvpFairness = enriched;
     }
@@ -897,21 +904,34 @@ public final class MindustryAgentPlugin extends Plugin {
                 Log.info("[LLM bridge] @ captured RTS control point @", team.name, point.id);
             }
         }
-        Team territorialWinner = null;
+        Team secureController = null;
         for (Team team : configuredAgentTeams()) {
-            boolean ownsAll = !rtsControlPoints.isEmpty()
-                && rtsControlPoints.stream().allMatch(point -> point.owner == team);
-            if (ownsAll) {
-                territorialWinner = team;
+            boolean securelyControlsAll = !rtsControlPoints.isEmpty()
+                && rtsControlPoints.stream().allMatch(point -> point.owner == team
+                    && !point.contested && point.capturingTeam == null);
+            if (securelyControlsAll) {
+                secureController = team;
                 break;
             }
         }
-        if (territorialWinner != null) {
-            gameEndReason = "all_three_control_points_captured";
-            Vars.state.gameOver = true;
-            Log.info("[LLM bridge] @ won by controlling all three RTS objectives", territorialWinner.name);
-            Events.fire(new GameOverEvent(territorialWinner));
-            return;
+        if (secureController == null) {
+            rtsTotalControlTeam = null;
+            rtsTotalControlStartTick = -1d;
+        } else {
+            if (rtsTotalControlTeam != secureController) {
+                rtsTotalControlTeam = secureController;
+                rtsTotalControlStartTick = Vars.state.tick;
+                Log.info("[LLM bridge] @ began the 60-second three-objective hold", secureController.name);
+            }
+            double heldSeconds = Math.max(0d, (Vars.state.tick - rtsTotalControlStartTick) / 60d);
+            if (heldSeconds >= RTS_TOTAL_CONTROL_HOLD_SECONDS) {
+                gameEndReason = "all_three_control_points_held_60_seconds";
+                Vars.state.gameOver = true;
+                Log.info("[LLM bridge] @ won by securely holding all three RTS objectives for 60 seconds",
+                    secureController.name);
+                Events.fire(new GameOverEvent(secureController));
+                return;
+            }
         }
         if (Vars.state.tick < nextRtsControlIncomeTick) return;
         while (nextRtsControlIncomeTick <= Vars.state.tick) {
@@ -948,12 +968,31 @@ public final class MindustryAgentPlugin extends Plugin {
             row.put("income_items", namedCost(point.income));
             row.put("income_ticks_paid", point.incomeTicks);
             row.put("captures", point.captures);
-            row.put("victory_rule", "own_all_three_control_points_simultaneously");
+            row.put("victory_rule", "securely_hold_all_three_control_points_for_60_uninterrupted_seconds");
             CoreBuild ownCore = observer.core();
             row.put("distance_from_own_core_tiles", ownCore == null ? null : Math.sqrt(
                 distance2(point.x, point.y, ownCore.tileX(), ownCore.tileY())));
             result.add(row);
         }
+        return result;
+    }
+
+    private Map<String, Object> rtsTerritorialVictoryState(Team observer) {
+        if (!"stockpile_rts_pvp".equals(gameModeVariant)) return Map.of();
+        double elapsed = rtsTotalControlTeam == null || rtsTotalControlStartTick < 0d
+            ? 0d : Math.max(0d, (Vars.state.tick - rtsTotalControlStartTick) / 60d);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("rule", "securely_hold_all_three_control_points_for_60_uninterrupted_seconds");
+        result.put("required_hold_seconds", RTS_TOTAL_CONTROL_HOLD_SECONDS);
+        result.put("current_secure_controller", rtsTotalControlTeam == null ? null : rtsTotalControlTeam.name);
+        result.put("hold_elapsed_seconds", Math.min(RTS_TOTAL_CONTROL_HOLD_SECONDS, elapsed));
+        result.put("hold_remaining_seconds", Math.max(0d, RTS_TOTAL_CONTROL_HOLD_SECONDS - elapsed));
+        result.put("self_is_current_secure_controller", rtsTotalControlTeam == observer);
+        result.put("reset_conditions", List.of(
+            "lose_ownership_of_any_control_point",
+            "any_control_point_becomes_contested",
+            "an_opponent_begins_capturing_any_control_point"
+        ));
         return result;
     }
 
@@ -1153,12 +1192,12 @@ public final class MindustryAgentPlugin extends Plugin {
                 ? "item turrets and walls use standard construction cost/time; resupply_turrets transfers chosen compatible ammunition from the abundant core stockpile without belts"
                 : "native Mindustry turret supply and wall mechanics",
             "territory_mechanic", "stockpile_rts_pvp".equals(gameModeVariant)
-                ? "combat units capture neutral map objectives; owned objectives provide periodic income and owning all three wins immediately"
+                ? "combat units capture neutral map objectives; owned objectives provide periodic income and secure control of all three for 60 uninterrupted seconds wins"
                 : "none"
         ));
         if ("stockpile_rts_pvp".equals(gameModeVariant)) {
             root.put("victory_conditions", List.of(
-                "own_all_three_control_points_simultaneously",
+                "securely_hold_all_three_control_points_for_60_uninterrupted_seconds",
                 "destroy_every_enemy_core"
             ));
         }
@@ -1176,6 +1215,7 @@ public final class MindustryAgentPlugin extends Plugin {
         root.put("rts_training_queues", rtsTrainingQueueState(team));
         root.put("rts_upgrade_queues", rtsUpgradeQueueState(team));
         root.put("rts_control_points", rtsControlPointState(team));
+        root.put("rts_territorial_victory", rtsTerritorialVictoryState(team));
         root.put("rts_squads", rtsSquadState(team));
         root.put("recent_unit_command_receipts", recentUnitCommandReceipts(team));
         root.put("recent_combat_losses", recentCombatLossState(team));
@@ -3517,8 +3557,8 @@ public final class MindustryAgentPlugin extends Plugin {
         StringBuilder hud = new StringBuilder("[accent]LLM PvP 관전[]");
         if (gameWinner != null) {
             hud.append("\n[accent]경기 종료 — ").append(teamMarkup(gameWinner)).append(" 승리[]")
-                .append(" (all_three_control_points_captured".equals(gameEndReason)
-                    ? "3개 거점 완전 점령" : "적 코어 파괴").append(')');
+                .append(" (all_three_control_points_held_60_seconds".equals(gameEndReason)
+                    ? "3개 거점 60초 유지" : "적 코어 파괴").append(')');
         }
         appendSpectatorTeam(hud, Team.sharded, "[sky]");
         appendSpectatorTeam(hud, Team.crux, "[scarlet]");
@@ -3534,6 +3574,15 @@ public final class MindustryAgentPlugin extends Plugin {
                     hud.append('(').append(point.capturingTeam.name).append(' ')
                         .append(String.format(Locale.ROOT, "%.0f%%", point.captureProgress * 100d)).append(')');
                 }
+            }
+            if (rtsTotalControlTeam != null && rtsTotalControlStartTick >= 0d) {
+                double heldSeconds = Math.min(RTS_TOTAL_CONTROL_HOLD_SECONDS,
+                    Math.max(0d, (Vars.state.tick - rtsTotalControlStartTick) / 60d));
+                hud.append('\n').append(teamMarkup(rtsTotalControlTeam)).append(" 3거점 유지[] ")
+                    .append(String.format(Locale.ROOT, "%.1f / %.0f초", heldSeconds,
+                        RTS_TOTAL_CONTROL_HOLD_SECONDS));
+            } else {
+                hud.append("\n3거점 연속 유지: 대기 중 (목표 60초)");
             }
         }
         Call.setHudText(hud.toString());

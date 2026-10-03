@@ -13,10 +13,12 @@ class RtsPluginContractTest(unittest.TestCase):
         self.assertIn("deadUnits.each(unit -> Call.unitDestroy(unit.id))", self.source)
         self.assertNotIn("deadUnits.each(Unit::remove)", self.source)
 
-    def test_three_objective_control_is_an_authoritative_win_condition(self) -> None:
-        self.assertIn('gameEndReason = "all_three_control_points_captured"', self.source)
+    def test_three_objective_hold_is_an_authoritative_timed_win_condition(self) -> None:
+        self.assertIn("RTS_TOTAL_CONTROL_HOLD_SECONDS = 60d", self.source)
+        self.assertIn('gameEndReason = "all_three_control_points_held_60_seconds"', self.source)
         self.assertIn("rtsControlPoints.stream().allMatch", self.source)
-        self.assertIn("Events.fire(new GameOverEvent(territorialWinner))", self.source)
+        self.assertIn("point.contested", self.source)
+        self.assertIn("Events.fire(new GameOverEvent(secureController))", self.source)
 
     def test_showcase_uses_tactical_terrain_v2(self) -> None:
         self.assertIn("symmetric_three_lane_tactical_showcase_v2", self.source)

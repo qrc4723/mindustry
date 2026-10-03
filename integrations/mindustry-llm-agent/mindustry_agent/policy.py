@@ -572,7 +572,7 @@ def _pvp_objective_state(state: dict[str, Any]) -> dict[str, Any]:
         and state["game_mode_variant"].get("id") == "stockpile_rts_pvp"
     )
     victory_condition = (
-        "own_all_three_control_points_or_destroy_every_enemy_core"
+        "securely_hold_all_three_control_points_for_60_seconds_or_destroy_every_enemy_core"
         if stockpile_rts else "destroy_every_enemy_core"
     )
     territorial_victory: dict[str, Any] | None = None
@@ -593,14 +593,30 @@ def _pvp_objective_state(state: dict[str, Any]) -> dict[str, Any]:
              if owner not in {self_name, "neutral", "None", ""}),
             default=0,
         )
+        hold = (
+            state.get("rts_territorial_victory")
+            if isinstance(state.get("rts_territorial_victory"), dict) else {}
+        )
         territorial_victory = {
             "total_control_points": len(points),
             "owned_by_self": own_points,
             "most_owned_by_one_opponent": enemy_points,
             "neutral": owner_counts.get("neutral", 0),
-            "points_needed_for_self_instant_win": max(0, len(points) - own_points),
-            "points_needed_for_opponent_instant_win": max(0, len(points) - enemy_points),
+            "points_needed_for_self_full_control": max(0, len(points) - own_points),
+            "points_needed_for_opponent_full_control": max(0, len(points) - enemy_points),
             "ownership_by_team": owner_counts,
+            "required_hold_seconds": hold.get("required_hold_seconds", 60.0),
+            "current_secure_controller": hold.get("current_secure_controller"),
+            "hold_elapsed_seconds": hold.get("hold_elapsed_seconds", 0.0),
+            "hold_remaining_seconds": hold.get("hold_remaining_seconds", 60.0),
+            "self_is_current_secure_controller": hold.get(
+                "self_is_current_secure_controller", False
+            ),
+            "reset_conditions": hold.get("reset_conditions", [
+                "lose_ownership_of_any_control_point",
+                "any_control_point_becomes_contested",
+                "an_opponent_begins_capturing_any_control_point",
+            ]),
         }
     factory_rows = []
     for building in factories[:20]:
@@ -1314,7 +1330,7 @@ def compact_state(state: dict[str, Any]) -> dict[str, Any]:
             "episode_id", "result", "self_team", "wave", "wave_time_remaining_seconds",
             "map", "rules", "game_mode_variant", "pvp_fairness", "core", "cores", "core_defender", "defense_supply", "wave_forecast", "threat_summary", "enemy_spawns",
             "rts_construction_queue", "rts_training_queues", "rts_upgrade_queues",
-            "rts_battlefield", "rts_control_points", "rts_squads", "recent_unit_command_receipts",
+            "rts_battlefield", "rts_control_points", "rts_territorial_victory", "rts_squads", "recent_unit_command_receipts",
             "recent_combat_losses",
             "power_networks", "power_node_topology", "action_contract", "infrastructure_backlog", "recent_defense_outcomes",
         )
