@@ -476,13 +476,14 @@ class PolicyTest(unittest.TestCase):
                 {"id": "center_technology", "owner": "crux"},
                 {"id": "south_advanced", "owner": "neutral"},
             ],
-            "rts_territorial_victory": {
-                "required_hold_seconds": 60.0,
-                "current_secure_controller": "crux",
-                "hold_elapsed_seconds": 18.5,
-                "hold_remaining_seconds": 41.5,
-                "self_is_current_secure_controller": False,
-                "reset_conditions": ["any_control_point_becomes_contested"],
+            "rts_control_benefits": {
+                "production_and_upgrade_speed_bonus_per_owned_point_fraction": 0.1,
+                "friendly_unit_repair_max_health_fraction_per_second_in_owned_radius": 0.01,
+                "current_production_and_upgrade_speed_multiplier": 1.1,
+                "teams": {
+                    "sharded": {"owned_points": 1, "production_and_upgrade_speed_multiplier": 1.1},
+                    "crux": {"owned_points": 1, "production_and_upgrade_speed_multiplier": 1.1},
+                },
             },
             "core": {"items": {"lead": 100, "silicon": 80}},
             "buildings": [{
@@ -562,16 +563,16 @@ class PolicyTest(unittest.TestCase):
         self.assertEqual(compact["game_mode_variant"]["id"], "stockpile_rts_pvp")
         self.assertEqual(
             compact["pvp_objective"]["victory_condition"],
-            "securely_hold_all_three_control_points_for_60_seconds_or_destroy_every_enemy_core",
+            "destroy_every_enemy_core",
         )
-        territory = compact["pvp_objective"]["territorial_victory"]
-        self.assertEqual(territory["owned_by_self"], 1)
-        self.assertEqual(territory["most_owned_by_one_opponent"], 1)
-        self.assertEqual(territory["points_needed_for_self_full_control"], 2)
-        self.assertEqual(territory["points_needed_for_opponent_full_control"], 2)
-        self.assertEqual(territory["current_secure_controller"], "crux")
-        self.assertEqual(territory["hold_elapsed_seconds"], 18.5)
-        self.assertEqual(territory["hold_remaining_seconds"], 41.5)
+        benefits = compact["pvp_objective"]["control_point_benefits"]
+        self.assertFalse(benefits["direct_victory_effect"])
+        self.assertEqual(benefits["owned_by_self"], 1)
+        self.assertEqual(benefits["most_owned_by_one_opponent"], 1)
+        self.assertEqual(benefits["current_production_and_upgrade_speed_multiplier"], 1.1)
+        self.assertEqual(
+            benefits["friendly_unit_repair_max_health_fraction_per_second_in_owned_radius"], 0.01
+        )
         self.assertEqual(compact["rts_training_queues"][0]["remaining"], 3)
         self.assertEqual(compact["rts_upgrade_queues"][0]["remaining"], 1)
         self.assertEqual(compact["rts_construction_queue"][0]["status"], "queued")

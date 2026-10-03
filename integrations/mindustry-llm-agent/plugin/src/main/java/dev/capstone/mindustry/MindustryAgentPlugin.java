@@ -145,8 +145,8 @@ public final class MindustryAgentPlugin extends Plugin {
     private static final double RTS_SQUAD_UPDATE_INTERVAL_TICKS = 30d;
     private static final double RTS_CONTROL_CAPTURE_RADIUS_TILES = 11d;
     private static final double RTS_CONTROL_CAPTURE_SECONDS = 12d;
-    private static final double RTS_CONTROL_INCOME_INTERVAL_TICKS = 300d;
-    private static final double RTS_TOTAL_CONTROL_HOLD_SECONDS = 60d;
+    private static final double RTS_CONTROL_PRODUCTION_SPEED_BONUS_PER_POINT = 0.10d;
+    private static final double RTS_CONTROL_REPAIR_MAX_HEALTH_PER_SECOND = 0.01d;
     private static final int RTS_ABUNDANT_ITEM_AMOUNT = 12000;
     private static final int[][] DIRECTIONS = {{1, 0}, {0, 1}, {-1, 0}, {0, -1}};
 
@@ -175,10 +175,8 @@ public final class MindustryAgentPlugin extends Plugin {
     private final List<RtsTrainingOrder> rtsTrainingOrders = new ArrayList<>();
     private final List<RtsUpgradeOrder> rtsUpgradeOrders = new ArrayList<>();
     private final List<RtsControlPoint> rtsControlPoints = new ArrayList<>();
-    private double nextRtsControlIncomeTick;
+    private double lastRtsControlUpdateTick;
     private double nextRtsControlLabelTick;
-    private Team rtsTotalControlTeam;
-    private double rtsTotalControlStartTick = -1d;
     private double nextSpectatorHudTick;
     private boolean spectatorHudVisible;
     private String gameEndReason = "";
@@ -204,10 +202,8 @@ public final class MindustryAgentPlugin extends Plugin {
             rtsTrainingOrders.clear();
             rtsUpgradeOrders.clear();
             rtsControlPoints.clear();
-            nextRtsControlIncomeTick = 0d;
+            lastRtsControlUpdateTick = 0d;
             nextRtsControlLabelTick = 0d;
-            rtsTotalControlTeam = null;
-            rtsTotalControlStartTick = -1d;
             nextSpectatorHudTick = 0d;
             spectatorHudVisible = false;
             restartScheduled = false;
@@ -824,8 +820,7 @@ public final class MindustryAgentPlugin extends Plugin {
 
     private void initializeRtsControlPoints(Team sourceTeam, Team targetTeam) {
         rtsControlPoints.clear();
-        rtsTotalControlTeam = null;
-        rtsTotalControlStartTick = -1d;
+        lastRtsControlUpdateTick = Vars.state.tick;
         CoreBuild source = sourceTeam.core(), target = targetTeam.core();
         if (source == null || target == null) return;
         double centerX = (source.tileX() + target.tileX()) / 2d;
@@ -835,29 +830,28 @@ public final class MindustryAgentPlugin extends Plugin {
         double length = Math.max(1d, Math.sqrt(forwardX * forwardX + forwardY * forwardY));
         double lateralX = -forwardY / length;
         double lateralY = forwardX / length;
-        addRtsControlPoint("north_industry", centerX + lateralX * 28d, centerY + lateralY * 28d,
-            Map.of(Items.copper, 90, Items.lead, 90, Items.graphite, 45));
-        addRtsControlPoint("center_technology", centerX, centerY,
-            Map.of(Items.silicon, 70, Items.titanium, 45, Items.metaglass, 35));
-        addRtsControlPoint("south_advanced", centerX - lateralX * 28d, centerY - lateralY * 28d,
-            Map.of(Items.thorium, 35, Items.plastanium, 25, Items.phaseFabric, 18, Items.surgeAlloy, 18));
-        nextRtsControlIncomeTick = Vars.state.tick + RTS_CONTROL_INCOME_INTERVAL_TICKS;
+        addRtsControlPoint("north_industry", centerX + lateralX * 28d, centerY + lateralY * 28d);
+        addRtsControlPoint("center_technology", centerX, centerY);
+        addRtsControlPoint("south_advanced", centerX - lateralX * 28d, centerY - lateralY * 28d);
         Map<String, Object> enriched = new LinkedHashMap<>(pvpFairness);
-        enriched.put("strategic_control_points", "three neutral symmetric-access objectives; combat-unit presence captures them, each owned point grants its disclosed item bundle every 5 seconds, and secure simultaneous control of all three for 60 uninterrupted seconds wins the match");
-        enriched.put("victory_conditions", List.of("securely_hold_all_three_control_points_for_60_seconds", "destroy_every_enemy_core"));
+        enriched.put("strategic_control_points", "three neutral symmetric-access objectives; each owned point grants 10% faster unit training and upgrading plus 1% maximum-health repair per second to friendly combat units inside its radius; control points never directly win the match");
+        enriched.put("victory_conditions", List.of("destroy_every_enemy_core"));
         enriched.put("starting_stockpile_is_finite_but_abundant", true);
         pvpFairness = enriched;
     }
 
-    private void addRtsControlPoint(String id, double x, double y, Map<Item, Integer> income) {
+    private void addRtsControlPoint(String id, double x, double y) {
         int tileX = Math.max(2, Math.min(Vars.world.width() - 3, (int)Math.round(x)));
         int tileY = Math.max(2, Math.min(Vars.world.height() - 3, (int)Math.round(y)));
-        rtsControlPoints.add(new RtsControlPoint(id, tileX, tileY, income));
+        rtsControlPoints.add(new RtsControlPoint(id, tileX, tileY));
     }
 
     private void updateRtsControlPoints() {
         if (!"stockpile_rts_pvp".equals(gameModeVariant) || Vars.state == null
             || !Vars.state.isGame() || Vars.state.gameOver || rtsControlPoints.isEmpty()) return;
+        double elapsedTicks = lastRtsControlUpdateTick <= 0d
+            ? 0d : Math.max(0d, Vars.state.tick - lastRtsControlUpdateTick);
+        lastRtsControlUpdateTick = Vars.state.tick;
         double radiusWorld = RTS_CONTROL_CAPTURE_RADIUS_TILES * Vars.tilesize;
         for (RtsControlPoint point : rtsControlPoints) {
             Map<Team, Integer> presence = new LinkedHashMap<>();
@@ -904,45 +898,18 @@ public final class MindustryAgentPlugin extends Plugin {
                 Log.info("[LLM bridge] @ captured RTS control point @", team.name, point.id);
             }
         }
-        Team secureController = null;
-        for (Team team : configuredAgentTeams()) {
-            boolean securelyControlsAll = !rtsControlPoints.isEmpty()
-                && rtsControlPoints.stream().allMatch(point -> point.owner == team
-                    && !point.contested && point.capturingTeam == null);
-            if (securelyControlsAll) {
-                secureController = team;
-                break;
-            }
-        }
-        if (secureController == null) {
-            rtsTotalControlTeam = null;
-            rtsTotalControlStartTick = -1d;
-        } else {
-            if (rtsTotalControlTeam != secureController) {
-                rtsTotalControlTeam = secureController;
-                rtsTotalControlStartTick = Vars.state.tick;
-                Log.info("[LLM bridge] @ began the 60-second three-objective hold", secureController.name);
-            }
-            double heldSeconds = Math.max(0d, (Vars.state.tick - rtsTotalControlStartTick) / 60d);
-            if (heldSeconds >= RTS_TOTAL_CONTROL_HOLD_SECONDS) {
-                gameEndReason = "all_three_control_points_held_60_seconds";
-                Vars.state.gameOver = true;
-                Log.info("[LLM bridge] @ won by securely holding all three RTS objectives for 60 seconds",
-                    secureController.name);
-                Events.fire(new GameOverEvent(secureController));
-                return;
-            }
-        }
-        if (Vars.state.tick < nextRtsControlIncomeTick) return;
-        while (nextRtsControlIncomeTick <= Vars.state.tick) {
-            nextRtsControlIncomeTick += RTS_CONTROL_INCOME_INTERVAL_TICKS;
-        }
+        if (elapsedTicks <= 0d) return;
+        double repairFraction = RTS_CONTROL_REPAIR_MAX_HEALTH_PER_SECOND * elapsedTicks / 60d;
         for (RtsControlPoint point : rtsControlPoints) {
-            if (point.owner == null) continue;
-            CoreBuild core = point.owner.core();
-            if (core == null) continue;
-            point.income.forEach((item, amount) -> core.items.add(item, amount));
-            point.incomeTicks++;
+            if (point.owner == null || point.contested) continue;
+            for (Unit unit : point.owner.data().units) {
+                if (unit.dead() || !unit.isAdded() || !unit.type.canAttack || !unit.type.hasWeapons()
+                    || unit.health >= unit.maxHealth) continue;
+                float dx = unit.x - point.worldX(), dy = unit.y - point.worldY();
+                if (dx * dx + dy * dy <= radiusWorld * radiusWorld) {
+                    unit.heal((float)(unit.maxHealth * repairFraction));
+                }
+            }
         }
     }
 
@@ -964,11 +931,11 @@ public final class MindustryAgentPlugin extends Plugin {
                 presence.put(team.name, point.lastPresence.getOrDefault(team.id, 0));
             }
             row.put("combat_unit_presence", presence);
-            row.put("income_every_seconds", RTS_CONTROL_INCOME_INTERVAL_TICKS / 60d);
-            row.put("income_items", namedCost(point.income));
-            row.put("income_ticks_paid", point.incomeTicks);
             row.put("captures", point.captures);
-            row.put("victory_rule", "securely_hold_all_three_control_points_for_60_uninterrupted_seconds");
+            row.put("direct_victory_effect", false);
+            row.put("production_and_upgrade_speed_bonus_fraction", RTS_CONTROL_PRODUCTION_SPEED_BONUS_PER_POINT);
+            row.put("friendly_unit_repair_max_health_fraction_per_second_in_radius",
+                RTS_CONTROL_REPAIR_MAX_HEALTH_PER_SECOND);
             CoreBuild ownCore = observer.core();
             row.put("distance_from_own_core_tiles", ownCore == null ? null : Math.sqrt(
                 distance2(point.x, point.y, ownCore.tileX(), ownCore.tileY())));
@@ -977,23 +944,38 @@ public final class MindustryAgentPlugin extends Plugin {
         return result;
     }
 
-    private Map<String, Object> rtsTerritorialVictoryState(Team observer) {
+    private Map<String, Object> rtsControlBenefitState(Team observer) {
         if (!"stockpile_rts_pvp".equals(gameModeVariant)) return Map.of();
-        double elapsed = rtsTotalControlTeam == null || rtsTotalControlStartTick < 0d
-            ? 0d : Math.max(0d, (Vars.state.tick - rtsTotalControlStartTick) / 60d);
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("rule", "securely_hold_all_three_control_points_for_60_uninterrupted_seconds");
-        result.put("required_hold_seconds", RTS_TOTAL_CONTROL_HOLD_SECONDS);
-        result.put("current_secure_controller", rtsTotalControlTeam == null ? null : rtsTotalControlTeam.name);
-        result.put("hold_elapsed_seconds", Math.min(RTS_TOTAL_CONTROL_HOLD_SECONDS, elapsed));
-        result.put("hold_remaining_seconds", Math.max(0d, RTS_TOTAL_CONTROL_HOLD_SECONDS - elapsed));
-        result.put("self_is_current_secure_controller", rtsTotalControlTeam == observer);
-        result.put("reset_conditions", List.of(
-            "lose_ownership_of_any_control_point",
-            "any_control_point_becomes_contested",
-            "an_opponent_begins_capturing_any_control_point"
-        ));
+        result.put("direct_victory_effect", false);
+        result.put("victory_condition", "destroy_every_enemy_core");
+        result.put("production_and_upgrade_speed_bonus_per_owned_point_fraction",
+            RTS_CONTROL_PRODUCTION_SPEED_BONUS_PER_POINT);
+        result.put("maximum_production_and_upgrade_speed_bonus_fraction",
+            RTS_CONTROL_PRODUCTION_SPEED_BONUS_PER_POINT * rtsControlPoints.size());
+        result.put("friendly_unit_repair_max_health_fraction_per_second_in_owned_radius",
+            RTS_CONTROL_REPAIR_MAX_HEALTH_PER_SECOND);
+        result.put("owned_points", ownedRtsControlPointCount(observer));
+        result.put("current_production_and_upgrade_speed_multiplier", rtsProductionSpeedMultiplier(observer));
+        Map<String, Object> teams = new LinkedHashMap<>();
+        for (Team team : configuredAgentTeams()) {
+            teams.put(team.name, Map.of(
+                "owned_points", ownedRtsControlPointCount(team),
+                "production_and_upgrade_speed_multiplier", rtsProductionSpeedMultiplier(team)
+            ));
+        }
+        result.put("teams", teams);
         return result;
+    }
+
+    private int ownedRtsControlPointCount(Team team) {
+        int count = 0;
+        for (RtsControlPoint point : rtsControlPoints) if (point.owner == team) count++;
+        return count;
+    }
+
+    private double rtsProductionSpeedMultiplier(Team team) {
+        return 1d + ownedRtsControlPointCount(team) * RTS_CONTROL_PRODUCTION_SPEED_BONUS_PER_POINT;
     }
 
     private void updateRtsControlPointVisuals() {
@@ -1192,14 +1174,11 @@ public final class MindustryAgentPlugin extends Plugin {
                 ? "item turrets and walls use standard construction cost/time; resupply_turrets transfers chosen compatible ammunition from the abundant core stockpile without belts"
                 : "native Mindustry turret supply and wall mechanics",
             "territory_mechanic", "stockpile_rts_pvp".equals(gameModeVariant)
-                ? "combat units capture neutral map objectives; owned objectives provide periodic income and secure control of all three for 60 uninterrupted seconds wins"
+                ? "combat units capture neutral map objectives; each owned point grants 10% faster unit training/upgrading and repairs friendly combat units inside its radius; control points do not directly win"
                 : "none"
         ));
         if ("stockpile_rts_pvp".equals(gameModeVariant)) {
-            root.put("victory_conditions", List.of(
-                "securely_hold_all_three_control_points_for_60_uninterrupted_seconds",
-                "destroy_every_enemy_core"
-            ));
+            root.put("victory_conditions", List.of("destroy_every_enemy_core"));
         }
         root.put("pvp_fairness", pvpFairness);
         root.put("rts_battlefield", pvpFairness.getOrDefault("strategic_battlefield", Map.of()));
@@ -1215,7 +1194,7 @@ public final class MindustryAgentPlugin extends Plugin {
         root.put("rts_training_queues", rtsTrainingQueueState(team));
         root.put("rts_upgrade_queues", rtsUpgradeQueueState(team));
         root.put("rts_control_points", rtsControlPointState(team));
-        root.put("rts_territorial_victory", rtsTerritorialVictoryState(team));
+        root.put("rts_control_benefits", rtsControlBenefitState(team));
         root.put("rts_squads", rtsSquadState(team));
         root.put("recent_unit_command_receipts", recentUnitCommandReceipts(team));
         root.put("recent_combat_losses", recentCombatLossState(team));
@@ -3557,8 +3536,7 @@ public final class MindustryAgentPlugin extends Plugin {
         StringBuilder hud = new StringBuilder("[accent]LLM PvP 관전[]");
         if (gameWinner != null) {
             hud.append("\n[accent]경기 종료 — ").append(teamMarkup(gameWinner)).append(" 승리[]")
-                .append(" (all_three_control_points_held_60_seconds".equals(gameEndReason)
-                    ? "3개 거점 60초 유지" : "적 코어 파괴").append(')');
+                .append(" (적 코어 파괴)");
         }
         appendSpectatorTeam(hud, Team.sharded, "[sky]");
         appendSpectatorTeam(hud, Team.crux, "[scarlet]");
@@ -3575,15 +3553,12 @@ public final class MindustryAgentPlugin extends Plugin {
                         .append(String.format(Locale.ROOT, "%.0f%%", point.captureProgress * 100d)).append(')');
                 }
             }
-            if (rtsTotalControlTeam != null && rtsTotalControlStartTick >= 0d) {
-                double heldSeconds = Math.min(RTS_TOTAL_CONTROL_HOLD_SECONDS,
-                    Math.max(0d, (Vars.state.tick - rtsTotalControlStartTick) / 60d));
-                hud.append('\n').append(teamMarkup(rtsTotalControlTeam)).append(" 3거점 유지[] ")
-                    .append(String.format(Locale.ROOT, "%.1f / %.0f초", heldSeconds,
-                        RTS_TOTAL_CONTROL_HOLD_SECONDS));
-            } else {
-                hud.append("\n3거점 연속 유지: 대기 중 (목표 60초)");
-            }
+            hud.append('\n').append("거점 보너스: ")
+                .append(teamMarkup(Team.sharded)).append(' ')
+                .append(String.format(Locale.ROOT, "x%.1f", rtsProductionSpeedMultiplier(Team.sharded)))
+                .append(" | ").append(teamMarkup(Team.crux)).append(' ')
+                .append(String.format(Locale.ROOT, "x%.1f", rtsProductionSpeedMultiplier(Team.crux)))
+                .append(" (점령 범위 내 초당 1% 회복)");
         }
         Call.setHudText(hud.toString());
         spectatorHudVisible = true;
@@ -4445,7 +4420,7 @@ public final class MindustryAgentPlugin extends Plugin {
         factory.configure(planIndex);
         RtsTrainingOrder order = new RtsTrainingOrder(
             controlledTeam(), x, y, unitName, count, selected.time, Vars.state.tick + selected.time,
-            namedCost(totalCost)
+            Vars.state.tick, namedCost(totalCost)
         );
         rtsTrainingOrders.add(order);
         Map<String, Object> result = new LinkedHashMap<>();
@@ -4457,7 +4432,9 @@ public final class MindustryAgentPlugin extends Plugin {
         result.put("count", count);
         result.put("total_cost", order.totalCost);
         result.put("seconds_per_unit", selected.time / 60f);
-        result.put("estimated_total_seconds", selected.time * count / 60f);
+        result.put("current_control_point_speed_multiplier", rtsProductionSpeedMultiplier(controlledTeam()));
+        result.put("estimated_total_seconds_at_current_control", selected.time * count
+            / 60f / rtsProductionSpeedMultiplier(controlledTeam()));
         result.put("mechanic", "one unit is created per standard plan time; this factory queue runs independently of belts and power in stockpile RTS mode");
         return result;
     }
@@ -4466,6 +4443,10 @@ public final class MindustryAgentPlugin extends Plugin {
         if (!"stockpile_rts_pvp".equals(gameModeVariant) || Vars.state == null || !Vars.state.isGame()
             || Vars.state.gameOver) return;
         for (RtsTrainingOrder order : rtsTrainingOrders) {
+            double multiplier = rtsProductionSpeedMultiplier(order.team);
+            double elapsed = Math.max(0d, Vars.state.tick - order.lastSpeedUpdateTick);
+            order.nextCompletionTick -= elapsed * (multiplier - 1d);
+            order.lastSpeedUpdateTick = Vars.state.tick;
             if (!"training".equals(order.status) || Vars.state.tick < order.nextCompletionTick) continue;
             Building building = Vars.world.build(order.factoryX, order.factoryY);
             if (!(building instanceof UnitFactoryBuild factory) || factory.team != order.team
@@ -4514,9 +4495,12 @@ public final class MindustryAgentPlugin extends Plugin {
             row.put("remaining", order.remaining);
             row.put("status", order.status);
             row.put("total_cost_paid", order.totalCost);
-            row.put("seconds_per_unit", order.ticksPerUnit / 60d);
+            double multiplier = rtsProductionSpeedMultiplier(team);
+            row.put("standard_seconds_per_unit", order.ticksPerUnit / 60d);
+            row.put("current_control_point_speed_multiplier", multiplier);
+            row.put("effective_seconds_per_unit_at_current_control", order.ticksPerUnit / 60d / multiplier);
             row.put("seconds_until_next_unit", "training".equals(order.status)
-                ? Math.max(0d, order.nextCompletionTick - Vars.state.tick) / 60d : 0d);
+                ? Math.max(0d, order.nextCompletionTick - Vars.state.tick) / 60d / multiplier : 0d);
             result.add(row);
         }
         return result;
@@ -4590,7 +4574,7 @@ public final class MindustryAgentPlugin extends Plugin {
         for (int input = 0; input < count; input++) inputs.get(input).remove();
         RtsUpgradeOrder order = new RtsUpgradeOrder(
             controlledTeam(), x, y, fromName, toName, count, block.constructTime,
-            Vars.state.tick + block.constructTime, namedCost(totalCost)
+            Vars.state.tick + block.constructTime, Vars.state.tick, namedCost(totalCost)
         );
         rtsUpgradeOrders.add(order);
         Map<String, Object> result = new LinkedHashMap<>();
@@ -4604,7 +4588,9 @@ public final class MindustryAgentPlugin extends Plugin {
         result.put("input_units_committed_immediately", count);
         result.put("total_cost", order.totalCost);
         result.put("seconds_per_unit", block.constructTime / 60f);
-        result.put("estimated_total_seconds", block.constructTime * count / 60f);
+        result.put("current_control_point_speed_multiplier", rtsProductionSpeedMultiplier(controlledTeam()));
+        result.put("estimated_total_seconds_at_current_control", block.constructTime * count
+            / 60f / rtsProductionSpeedMultiplier(controlledTeam()));
         return result;
     }
 
@@ -4612,6 +4598,10 @@ public final class MindustryAgentPlugin extends Plugin {
         if (!"stockpile_rts_pvp".equals(gameModeVariant) || Vars.state == null || !Vars.state.isGame()
             || Vars.state.gameOver) return;
         for (RtsUpgradeOrder order : rtsUpgradeOrders) {
+            double multiplier = rtsProductionSpeedMultiplier(order.team);
+            double elapsed = Math.max(0d, Vars.state.tick - order.lastSpeedUpdateTick);
+            order.nextCompletionTick -= elapsed * (multiplier - 1d);
+            order.lastSpeedUpdateTick = Vars.state.tick;
             if (!"upgrading".equals(order.status) || Vars.state.tick < order.nextCompletionTick) continue;
             Building building = Vars.world.build(order.reconstructorX, order.reconstructorY);
             if (!(building instanceof ReconstructorBuild) || building.team != order.team
@@ -4662,9 +4652,12 @@ public final class MindustryAgentPlugin extends Plugin {
             row.put("remaining", order.remaining);
             row.put("status", order.status);
             row.put("total_cost_paid", order.totalCost);
-            row.put("seconds_per_unit", order.ticksPerUnit / 60d);
+            double multiplier = rtsProductionSpeedMultiplier(team);
+            row.put("standard_seconds_per_unit", order.ticksPerUnit / 60d);
+            row.put("current_control_point_speed_multiplier", multiplier);
+            row.put("effective_seconds_per_unit_at_current_control", order.ticksPerUnit / 60d / multiplier);
             row.put("seconds_until_next_unit", "upgrading".equals(order.status)
-                ? Math.max(0d, order.nextCompletionTick - Vars.state.tick) / 60d : 0d);
+                ? Math.max(0d, order.nextCompletionTick - Vars.state.tick) / 60d / multiplier : 0d);
             result.add(row);
         }
         return result;
@@ -6009,20 +6002,17 @@ public final class MindustryAgentPlugin extends Plugin {
         private final String id;
         private final int x;
         private final int y;
-        private final Map<Item, Integer> income;
         private final Map<Integer, Integer> lastPresence = new LinkedHashMap<>();
         private Team owner;
         private Team capturingTeam;
         private double captureProgress;
         private boolean contested;
-        private int incomeTicks;
         private int captures;
 
-        private RtsControlPoint(String id, int x, int y, Map<Item, Integer> income) {
+        private RtsControlPoint(String id, int x, int y) {
             this.id = id;
             this.x = x;
             this.y = y;
-            this.income = new LinkedHashMap<>(income);
         }
 
         private float worldX() { return x * Vars.tilesize; }
@@ -6140,11 +6130,12 @@ public final class MindustryAgentPlugin extends Plugin {
         private int completed;
         private int remaining;
         private double nextCompletionTick;
+        private double lastSpeedUpdateTick;
         private String status = "training";
 
         private RtsTrainingOrder(Team team, int factoryX, int factoryY, String unitName,
                                  int requested, double ticksPerUnit, double nextCompletionTick,
-                                 Map<String, Integer> totalCost) {
+                                 double lastSpeedUpdateTick, Map<String, Integer> totalCost) {
             this.team = team;
             this.factoryX = factoryX;
             this.factoryY = factoryY;
@@ -6153,6 +6144,7 @@ public final class MindustryAgentPlugin extends Plugin {
             this.remaining = requested;
             this.ticksPerUnit = ticksPerUnit;
             this.nextCompletionTick = nextCompletionTick;
+            this.lastSpeedUpdateTick = lastSpeedUpdateTick;
             this.totalCost = totalCost;
         }
     }
@@ -6169,11 +6161,12 @@ public final class MindustryAgentPlugin extends Plugin {
         private int completed;
         private int remaining;
         private double nextCompletionTick;
+        private double lastSpeedUpdateTick;
         private String status = "upgrading";
 
         private RtsUpgradeOrder(Team team, int reconstructorX, int reconstructorY,
                                 String fromUnitName, String toUnitName, int requested,
-                                double ticksPerUnit, double nextCompletionTick,
+                                double ticksPerUnit, double nextCompletionTick, double lastSpeedUpdateTick,
                                 Map<String, Integer> totalCost) {
             this.team = team;
             this.reconstructorX = reconstructorX;
@@ -6184,6 +6177,7 @@ public final class MindustryAgentPlugin extends Plugin {
             this.remaining = requested;
             this.ticksPerUnit = ticksPerUnit;
             this.nextCompletionTick = nextCompletionTick;
+            this.lastSpeedUpdateTick = lastSpeedUpdateTick;
             this.totalCost = totalCost;
         }
     }

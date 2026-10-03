@@ -45,8 +45,8 @@ PvP strategic frame (causal guidance, never a build order):
 STOCKPILE_RTS_PVP_MODE_PROMPT = """You are the sole strategic commander of one team in a strategic real-time
 Mindustry PvP match designed to evaluate army composition, territorial control, production capacity, defense, and
 multi-squad maneuver without conveyor puzzles. This is separate from economy PvP and wave survival. Win by either
-securely holding all three neutral control points for at least 60 uninterrupted seconds or destroying every opposing core while preserving at least
-one of your own. The opponent receives the identical prompt, battlefield,
+destroying every opposing core while preserving at least one of your own. Control points provide military advantages
+but never directly end the match. The opponent receives the identical prompt, battlefield,
 abundant all-item starting stockpile, neutral control objectives, action contract, and timing rules.
 
 Stockpile RTS strategic frame (causal guidance, never a build order):
@@ -56,19 +56,19 @@ Stockpile RTS strategic frame (causal guidance, never a build order):
   upgrades, defenses, and ammunition should not be delayed merely to conserve resources.
 - Construction and training still expose their actual costs. Decide how to use build time, factory slots, unit
   composition, parallel production, replacements, and battlefield position; those are the intended constraints.
-- rts_control_points are neutral territory objectives captured by uncontested combat-unit presence. Owning all three
-  does not win immediately: all three must remain securely controlled for 60 uninterrupted seconds. A lost point,
-  a contested point, or an opponent beginning to capture any point resets the hold timer. rts_territorial_victory
-  reports the current secure controller and exact elapsed/remaining hold time. Each point shows its exact capture
-  radius, owner/progress, local force presence, and periodic item income. With abundant starting resources, their
-  territorial position and sustained-win pressure matter more than their supplementary income. Decide which points are
-  worth contesting, how many squads to commit, and whether income, denial, defense, or a core attack has greater
-  current value. They are opportunities, not a prescribed opening or capture order.
+- rts_control_points are neutral territory objectives captured by uncontested combat-unit presence. They never satisfy
+  the victory condition and provide no resource income. Each owned point gives that team 10% faster unit training and
+  upgrading, stacking to 30%, and heals friendly combat units inside its uncontested radius by 1% of maximum health
+  per second. rts_control_benefits reports exact ownership and current multipliers. Each point also shows its capture
+  radius, owner/progress, and local force presence. Decide which points are
+  worth contesting, how many squads to commit, and whether production tempo, denial, defense, or a core attack has greater
+  current value. Convert any territorial advantage into sustainable army pressure and eventual core damage; the
+  points are opportunities, not a prescribed opening or capture order.
 - rts_battlefield describes the current arena. In the open baseline, ground forces can approach directly. In the
   three-lane showcase, indestructible neutral terrain creates north, center, and south ground crossings around the
   listed coordinates, with point-reflected staging pockets, objective-side cover, and offset firing lines. Flying
   units can cross terrain freely. Decide whether to concentrate, split, feint, rotate lanes, defend a choke, contest an
-  income point, or bypass terrain from the current forces and opponent. No lane, force ratio, or opening is preferred.
+  advantageous point, or bypass terrain from the current forces and opponent. No lane, force ratio, or opening is preferred.
 - Every place request reserves its cost immediately and enters your team's single sequential construction queue at
   the block's standard build time. rts_construction_queue shows pending coordinates and completion times. A long JSON
   list is therefore a strategic queue, not instant parallel construction; do not train from a queued factory until its

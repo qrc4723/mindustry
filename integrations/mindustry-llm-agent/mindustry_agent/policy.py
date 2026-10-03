@@ -571,11 +571,8 @@ def _pvp_objective_state(state: dict[str, Any]) -> dict[str, Any]:
         isinstance(state.get("game_mode_variant"), dict)
         and state["game_mode_variant"].get("id") == "stockpile_rts_pvp"
     )
-    victory_condition = (
-        "securely_hold_all_three_control_points_for_60_seconds_or_destroy_every_enemy_core"
-        if stockpile_rts else "destroy_every_enemy_core"
-    )
-    territorial_victory: dict[str, Any] | None = None
+    victory_condition = "destroy_every_enemy_core"
+    control_point_benefits: dict[str, Any] | None = None
     if stockpile_rts:
         self_team = state.get("self_team") if isinstance(state.get("self_team"), dict) else {}
         self_name = str(self_team.get("name", ""))
@@ -593,30 +590,27 @@ def _pvp_objective_state(state: dict[str, Any]) -> dict[str, Any]:
              if owner not in {self_name, "neutral", "None", ""}),
             default=0,
         )
-        hold = (
-            state.get("rts_territorial_victory")
-            if isinstance(state.get("rts_territorial_victory"), dict) else {}
+        benefits = (
+            state.get("rts_control_benefits")
+            if isinstance(state.get("rts_control_benefits"), dict) else {}
         )
-        territorial_victory = {
+        control_point_benefits = {
+            "direct_victory_effect": False,
             "total_control_points": len(points),
             "owned_by_self": own_points,
             "most_owned_by_one_opponent": enemy_points,
             "neutral": owner_counts.get("neutral", 0),
-            "points_needed_for_self_full_control": max(0, len(points) - own_points),
-            "points_needed_for_opponent_full_control": max(0, len(points) - enemy_points),
             "ownership_by_team": owner_counts,
-            "required_hold_seconds": hold.get("required_hold_seconds", 60.0),
-            "current_secure_controller": hold.get("current_secure_controller"),
-            "hold_elapsed_seconds": hold.get("hold_elapsed_seconds", 0.0),
-            "hold_remaining_seconds": hold.get("hold_remaining_seconds", 60.0),
-            "self_is_current_secure_controller": hold.get(
-                "self_is_current_secure_controller", False
+            "production_and_upgrade_speed_bonus_per_owned_point_fraction": benefits.get(
+                "production_and_upgrade_speed_bonus_per_owned_point_fraction", 0.1
             ),
-            "reset_conditions": hold.get("reset_conditions", [
-                "lose_ownership_of_any_control_point",
-                "any_control_point_becomes_contested",
-                "an_opponent_begins_capturing_any_control_point",
-            ]),
+            "friendly_unit_repair_max_health_fraction_per_second_in_owned_radius": benefits.get(
+                "friendly_unit_repair_max_health_fraction_per_second_in_owned_radius", 0.01
+            ),
+            "current_production_and_upgrade_speed_multiplier": benefits.get(
+                "current_production_and_upgrade_speed_multiplier", 1.0 + own_points * 0.1
+            ),
+            "teams": benefits.get("teams", {}),
         }
     factory_rows = []
     for building in factories[:20]:
@@ -635,7 +629,7 @@ def _pvp_objective_state(state: dict[str, Any]) -> dict[str, Any]:
     return {
         "meaning": "Factual PvP scoreboard and current offensive assets; no build order or readiness score is imposed.",
         "victory_condition": victory_condition,
-        "territorial_victory": territorial_victory,
+        "control_point_benefits": control_point_benefits,
         "own_cores_remaining": len(state.get("cores", [])),
         "enemy_cores_remaining": len(enemy_cores),
         "enemy_cores": enemy_cores,
@@ -1330,7 +1324,7 @@ def compact_state(state: dict[str, Any]) -> dict[str, Any]:
             "episode_id", "result", "self_team", "wave", "wave_time_remaining_seconds",
             "map", "rules", "game_mode_variant", "pvp_fairness", "core", "cores", "core_defender", "defense_supply", "wave_forecast", "threat_summary", "enemy_spawns",
             "rts_construction_queue", "rts_training_queues", "rts_upgrade_queues",
-            "rts_battlefield", "rts_control_points", "rts_territorial_victory", "rts_squads", "recent_unit_command_receipts",
+            "rts_battlefield", "rts_control_points", "rts_control_benefits", "rts_squads", "recent_unit_command_receipts",
             "recent_combat_losses",
             "power_networks", "power_node_topology", "action_contract", "infrastructure_backlog", "recent_defense_outcomes",
         )
