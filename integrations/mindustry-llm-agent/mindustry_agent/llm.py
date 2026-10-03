@@ -114,7 +114,9 @@ Stockpile RTS strategic frame (causal guidance, never a build order):
   requested fraction. Reassess ammo_fraction and loaded-ammo DPS rather than treating an empty turret as protection.
 - Read rts_training_queues for paid cost, completed and remaining units, status, and time until the next unit. Do not
   repay or recreate an active order merely because its units have not finished yet. Each factory instance also joins
-  this evidence at its own coordinate: issue a new train_units order only when available_for_new_order=true.
+  this evidence at its own coordinate: issue a new train_units order only when available_for_new_order=true. A busy
+  factory is not a reason for the whole commander to wait when another completed slot, an unassigned living unit,
+  a tactical movement, an upgrade, or a defensive action can advance the current intent independently.
 - Read rts_upgrade_queues the same way. Do not issue an upgrade without enough existing from_unit units or while that
   reconstructor is busy; each reconstructor instance reports available_for_new_order, and every upgrade row reports
   available_input_units_now and maximum_startable_now_from_resources_and_units. These are current facts, not quotas.
@@ -133,6 +135,12 @@ Stockpile RTS strategic frame (causal guidance, never a build order):
   control points, select targets, attack infrastructure or cores, screen your base, retreat damaged forces, and adapt to the
   opponent's observed composition and defenses. Static defense can preserve production or shape a fight, but only
   mobile forces or weapons that can actually reach the opposing core can complete the victory objective.
+- The actions array supports multiple independent actions in one response. Use that concurrency when several actions
+  are executable from the same observation; they must not depend on a structure or unit that an earlier action in the
+  same response has not completed yet. No-action turns should be exceptional: wait only when an already-paid queue or
+  persistent order is producing the intended evidence and no other currently legal action would advance or protect
+  the current intent. Never submit an order to a busy slot, and never repeat an identical squad order. To reinforce
+  that squad, provide the newly observed living unit_ids explicitly; otherwise give those units a distinct order.
 - attack_move is a persistent travel-and-engage order toward an area; attack with the exact visible building tile is a
   focused structure order. When an assault reaches a visible enemy core or critical building, choose deliberately
   between continuing area combat and focusing that structure. Do not reissue an identical living squad order: the
@@ -141,7 +149,8 @@ Stockpile RTS strategic frame (causal guidance, never a build order):
   losses, distances, target health, factory survival, and remaining stockpile to make each decision. In this mode the
   runner refreshes state 0.5 seconds after every response; requested wait_seconds does not delay the next observation.
 - Use receding-horizon control. The current strategic objective must describe the next observable outcome that can
-  begin with assets and slots that exist now, or the single prerequisite that must be completed first. Do not present
+  begin with assets and slots that exist now. It may use multiple independent actions that are executable now, but
+  must not assume that a queued prerequisite has already completed. Do not present
   a chain such as "produce N, then upgrade, then destroy the core" as the current objective when its later steps are
   not yet executable. Keep the final victory condition as rationale, execute the present step, observe what actually
   completed, and then choose whether the downstream step still makes sense.
@@ -167,7 +176,8 @@ training or upgrading. Exact coordinates remain valid when deliberately chosen. 
 currently legal execution target; it never chooses the block, unit, quantity, formation, or strategy for you. Do not
 operate a queued structure before it appears as an existing instance, do not resubmit an identical persistent squad
 order, and treat preflight skips or action_failure_memory as evidence to revise execution. Waiting with no action is
-valid when a paid queue or persistent order is already producing the intended observable result.
+valid only when a paid queue or persistent order is already producing the intended observable result and no other
+currently legal independent action would advance or protect that intent.
 """
 
 
