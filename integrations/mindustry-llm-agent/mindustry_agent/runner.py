@@ -47,15 +47,24 @@ def preflight_rts_queue_actions(
         return list(actions), []
 
     factory_slots: dict[tuple[int, int], bool] = {}
+    factory_plans: dict[tuple[int, int], dict[str, int]] = {}
     for factory in production.get("factories", []):
         if not isinstance(factory, dict):
             continue
+        supported_plans: dict[str, int] = {}
+        for plan in factory.get("plans", []):
+            if not isinstance(plan, dict) or not isinstance(plan.get("unit"), str):
+                continue
+            supported_plans[str(plan["unit"])] = int(
+                plan.get("maximum_trainable_from_current_stockpile", 0) or 0
+            )
         for instance in factory.get("existing_instances", []):
             if not isinstance(instance, dict):
                 continue
             x, y = instance.get("x"), instance.get("y")
             if isinstance(x, int) and isinstance(y, int):
                 factory_slots[(x, y)] = bool(instance.get("available_for_new_order"))
+                factory_plans[(x, y)] = supported_plans
 
     reconstructor_slots: dict[tuple[int, int], bool] = {}
     reconstructor_upgrades: dict[tuple[int, int], dict[tuple[str, str], int]] = {}
@@ -237,6 +246,32 @@ def preflight_rts_queue_actions(
         elif coordinate in claimed:
             reason = f"duplicate_{facility}_order_in_same_decision"
         else:
+            if action_type == "train_units":
+                requested_unit = str(action.get("unit", ""))
+                supported = factory_plans.get(coordinate, {})
+                if requested_unit not in supported:
+                    skipped.append({
+                        "original_index": index,
+                        "action": action,
+                        "reason": "unsupported_unit_plan_in_observed_state",
+                        "message": (
+                            "Skipped because this factory does not expose the requested unit plan. "
+                            "Choose a unit listed for this facility in offensive_production."
+                        ),
+                    })
+                    continue
+                requested_count = int(action.get("count", 1) or 1)
+                if requested_count > supported[requested_unit]:
+                    skipped.append({
+                        "original_index": index,
+                        "action": action,
+                        "reason": "insufficient_training_resources_in_observed_state",
+                        "message": (
+                            "Skipped because the requested count exceeds the currently observed stockpile limit "
+                            "for this factory plan. Re-observe or request no more than the reported maximum."
+                        ),
+                    })
+                    continue
             if action_type == "upgrade_units":
                 pair = (str(action.get("from_unit", "")), str(action.get("to_unit", "")))
                 supported = reconstructor_upgrades.get(coordinate, {})
@@ -428,6 +463,7 @@ def run(config: AgentConfig, *, once: bool, dry_run: bool, max_turns: int | None
             "started_at_wave": strategic_context.get("started_at_wave", state.get("wave")) if same_objective else state.get("wave"),
             "unchanged_for_turns": int(strategic_context.get("unchanged_for_turns", 0)) + 1 if same_objective else 0,
         }
+        action_observed_tick = float(state.get("tick", 0))
         if not dry_run:
             latest_before_action = game.state()
             latest_episode_id = str(latest_before_action.get("episode_id"))
@@ -447,6 +483,15 @@ def run(config: AgentConfig, *, once: bool, dry_run: bool, max_turns: int | None
                     "llm_usage": llm_result.usage,
                 })
                 break
+            latest_compact_state = compact_state(latest_before_action)
+            action_observed_tick = float(latest_before_action.get("tick", action_observed_tick))
+            refreshed_actions, execution_time_skips = preflight_rts_queue_actions(
+                latest_compact_state, decision["actions"]
+            )
+            for skipped_action in execution_time_skips:
+                skipped_action["phase"] = "immediately_before_execution"
+            decision["actions"] = refreshed_actions
+            preflight_skips.extend(execution_time_skips)
         request_id = str(uuid4())
         action_response: dict[str, Any]
         if dry_run:
@@ -457,7 +502,7 @@ def run(config: AgentConfig, *, once: bool, dry_run: bool, max_turns: int | None
                     request_id,
                     decision["actions"],
                     expected_episode_id=episode_id,
-                    observed_tick=float(state.get("tick", 0)),
+                    observed_tick=action_observed_tick,
                     agent_telemetry={
                         "model": config.llm_model,
                         "turn": turns,
@@ -495,6 +540,7 @@ def run(config: AgentConfig, *, once: bool, dry_run: bool, max_turns: int | None
             "preflight_skips": preflight_skips,
             "action_response": action_response,
             "observed_tick": state.get("tick"),
+            "action_revalidated_tick": action_observed_tick,
             "action_applied_tick": action_response.get("tick"),
             "llm_latency_seconds": llm_result.latency_seconds,
             "llm_usage": llm_result.usage,

@@ -44,7 +44,11 @@ class RunnerTimingTest(unittest.TestCase):
         state = {
             "game_mode_variant": {"id": "stockpile_rts_pvp"},
             "offensive_production": {
-                "factories": [{"existing_instances": [
+                "factories": [{"plans": [{
+                    "unit": "dagger", "maximum_trainable_from_current_stockpile": 20,
+                }, {
+                    "unit": "nova", "maximum_trainable_from_current_stockpile": 20,
+                }], "existing_instances": [
                     {"x": 10, "y": 20, "available_for_new_order": False},
                     {"x": 11, "y": 20, "available_for_new_order": True},
                 ]}],
@@ -98,7 +102,9 @@ class RunnerTimingTest(unittest.TestCase):
                 "rows": [["production:0", 20, 30, 12.0, 0, 1, ["ground-factory"]]],
             },
             "offensive_production": {
-                "factories": [{"existing_instances": [
+                "factories": [{"plans": [{
+                    "unit": "dagger", "maximum_trainable_from_current_stockpile": 20,
+                }], "existing_instances": [
                     {
                         "facility_id": "factory:10:20", "x": 10, "y": 20,
                         "available_for_new_order": True,
@@ -149,7 +155,9 @@ class RunnerTimingTest(unittest.TestCase):
     def test_rts_preflight_allows_existing_squad_reinforcement(self) -> None:
         state = {
             "game_mode_variant": {"id": "stockpile_rts_pvp"},
-            "offensive_production": {"factories": [{"existing_instances": [{
+            "offensive_production": {"factories": [{"plans": [{
+                "unit": "dagger", "maximum_trainable_from_current_stockpile": 20,
+            }], "existing_instances": [{
                 "x": 10, "y": 20, "available_for_new_order": True,
             }]}], "reconstructors": []},
             "rts_squads": [{
@@ -242,6 +250,34 @@ class RunnerTimingTest(unittest.TestCase):
         self.assertEqual([item["reason"] for item in skipped], [
             "unsupported_upgrade_pair_in_observed_state",
             "insufficient_upgrade_inputs_or_resources_in_observed_state",
+        ])
+
+    def test_rts_preflight_checks_factory_plan_and_stockpile_count(self) -> None:
+        state = {
+            "game_mode_variant": {"id": "stockpile_rts_pvp"},
+            "offensive_production": {
+                "factories": [{
+                    "plans": [{
+                        "unit": "dagger", "maximum_trainable_from_current_stockpile": 2,
+                    }],
+                    "existing_instances": [{
+                        "x": 10, "y": 20, "available_for_new_order": True,
+                    }],
+                }],
+                "reconstructors": [],
+            },
+            "rts_squads": [],
+            "friendly_units": [],
+        }
+        actions = [
+            {"type": "train_units", "x": 10, "y": 20, "unit": "nova", "count": 1},
+            {"type": "train_units", "x": 10, "y": 20, "unit": "dagger", "count": 3},
+        ]
+        executable, skipped = preflight_rts_queue_actions(state, actions)
+        self.assertEqual(executable, [])
+        self.assertEqual([item["reason"] for item in skipped], [
+            "unsupported_unit_plan_in_observed_state",
+            "insufficient_training_resources_in_observed_state",
         ])
 
 
