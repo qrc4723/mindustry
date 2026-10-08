@@ -145,6 +145,7 @@ public final class MindustryAgentPlugin extends Plugin {
     private static final int MACRO_PATH_RADIUS = 64;
     private static final double RTS_SQUAD_UPDATE_INTERVAL_TICKS = 30d;
     private static final double RTS_EMPTY_SQUAD_RETENTION_TICKS = 30d * 60d;
+    private static final double CORE_DEFENDER_RESPAWN_DELAY_TICKS = 12d * 60d;
     private static final double RTS_CONTROL_CAPTURE_RADIUS_TILES = 11d;
     private static final double RTS_CONTROL_CAPTURE_SECONDS = 12d;
     private static final double RTS_CONTROL_PRODUCTION_SPEED_BONUS_PER_POINT = 0.10d;
@@ -1311,7 +1312,8 @@ public final class MindustryAgentPlugin extends Plugin {
         TeamAgentState state = teamAgentState(team);
         if (state.coreDefender != null && (state.coreDefender.dead() || !state.coreDefender.isAdded())) {
             state.coreDefender = null;
-            state.coreDefenderRespawnTick = Vars.state.tick + Player.deathDelay;
+            state.coreDefenderRespawnTick = Vars.state.tick
+                + Math.max(Player.deathDelay, CORE_DEFENDER_RESPAWN_DELAY_TICKS);
         }
         if (state.coreDefender != null || Vars.state.tick < state.coreDefenderRespawnTick) return;
         if (!(core.block instanceof CoreBlock coreBlock) || coreBlock.unitType == null) return;
@@ -1498,6 +1500,9 @@ public final class MindustryAgentPlugin extends Plugin {
         Map<String, Object> value = new LinkedHashMap<>();
         value.put("enabled", autoCoreDefense);
         value.put("active", coreDefender != null && coreDefender.isAdded() && !coreDefender.dead());
+        value.put("respawn_delay_seconds", CORE_DEFENDER_RESPAWN_DELAY_TICKS / 60d);
+        value.put("respawn_seconds_remaining", coreDefender == null
+            ? Math.max(0d, state.coreDefenderRespawnTick - Vars.state.tick) / 60d : 0d);
         if (coreDefender != null) {
             value.put("id", coreDefender.id);
             value.put("type", coreDefender.type.name);

@@ -373,7 +373,7 @@ RTS 실행 직전에는 관측 상태에서 이미 생산 중인 공장·강화 
 | `MINDUSTRY_AGENT_TOKEN` | 빈 값 | 선택적 Bearer 토큰(서버와 에이전트에 동일 설정) |
 | `MINDUSTRY_TEAM` | `sharded` | 단일 에이전트가 제어할 팀 |
 | `MINDUSTRY_TEAM_TOKENS` | 빈 값 | PvP 팀별 토큰. 예: `sharded=...;crux=...` |
-| `MINDUSTRY_AUTO_CORE_DEFENSE` | `true` | 에이전트 전용 코어 수비 기체 자동 생성·사격 |
+| `MINDUSTRY_AUTO_CORE_DEFENSE` | `true` | 에이전트 전용 코어 수비 기체 자동 생성·사격. 파괴 후 양 팀 공통 12초 재생성 대기 |
 | `LLM_BASE_URL` | `http://127.0.0.1:11434/v1` | OpenAI 호환 LLM 주소 |
 | `LLM_MODEL` | `deepseek-v4.1-flash:cloud` | 기준 모델 |
 | `LLM_MAX_TOKENS` | `2400` | 한 번의 전략 응답 출력 상한 |

@@ -33,6 +33,22 @@ class LearningTest(unittest.TestCase):
         self.assertEqual(repeated["error"], "no_effect")
         self.assertIn("no turret", repeated["message"])
 
+    def test_tracks_preflight_skips_as_within_episode_feedback(self) -> None:
+        tracker = ActionFailureTracker()
+        action = {
+            "type": "command_units", "unit": "dagger", "squad_id": "alpha",
+            "mode": "attack_move", "target_x": 84, "target_y": 40,
+        }
+        tracker.update_preflight([{
+            "action": action,
+            "reason": "standing_squad_order_already_active",
+            "message": "persistent order already active",
+            "phase": "immediately_before_execution",
+        }], turn=4, wave=0)
+        repeated = tracker.for_prompt()["most_repeated"][0]
+        self.assertEqual(repeated["error"], "standing_squad_order_already_active")
+        self.assertEqual(repeated["diagnostics"]["phase"], "immediately_before_execution")
+
     def test_compacts_large_action_outcome(self) -> None:
         actions = [{"type": "place", "block": "conveyor", "x": x, "y": 5, "rotation": 2} for x in range(32)]
         results = [{"index": x, "ok": False, "error": "invalid_placement", "message": "occupied"} for x in range(32)]

@@ -38,6 +38,11 @@ class RtsPluginContractTest(unittest.TestCase):
         self.assertIn('row.put("standing_order_registered_without_live_members"', self.source)
         self.assertIn("pendingReinforcements", self.source)
 
+    def test_core_defender_uses_visible_respawn_cooldown(self) -> None:
+        self.assertIn("CORE_DEFENDER_RESPAWN_DELAY_TICKS = 12d * 60d", self.source)
+        self.assertIn("Math.max(Player.deathDelay, CORE_DEFENDER_RESPAWN_DELAY_TICKS)", self.source)
+        self.assertIn('value.put("respawn_seconds_remaining"', self.source)
+
     def test_game_thread_state_requests_allow_serial_snapshot_work(self) -> None:
         self.assertIn("GAME_THREAD_REQUEST_TIMEOUT_SECONDS = 20", self.source)
         self.assertIn("future.get(GAME_THREAD_REQUEST_TIMEOUT_SECONDS", self.source)

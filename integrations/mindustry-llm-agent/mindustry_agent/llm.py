@@ -154,6 +154,10 @@ Stockpile RTS strategic frame (causal guidance, never a build order):
   persistent order is producing the intended evidence and no other currently legal action would advance or protect
   the current intent. Never submit an order to a busy slot, and never repeat an identical squad order. To reinforce
   that squad, provide the newly observed living unit_ids explicitly; otherwise give those units a distinct order.
+- action_failure_memory also includes model-authored actions rejected by feasibility preflight. If it reports
+  standing_squad_order_already_active, that exact squad mode, target, engagement radius, and membership is already
+  executing continuously. Do not submit the same signature again until observed evidence justifies a changed order;
+  use the action budget for a different executable choice or return no action while awaiting its stated evidence.
 - attack_move is a persistent travel-and-engage order toward an area; attack with the exact visible building tile is a
   focused structure order. When an assault reaches a visible enemy core or critical building, choose deliberately
   between continuing area combat and focusing that structure. Do not reissue an identical living squad order: the
@@ -161,6 +165,8 @@ Stockpile RTS strategic frame (causal guidance, never a build order):
 - Response latency and combat adaptation are part of performance. Use current friendly/enemy units, queue timing,
   losses, distances, target health, factory survival, and remaining stockpile to make each decision. In this mode the
   runner refreshes state 0.5 seconds after every response; requested wait_seconds does not delay the next observation.
+- core_defender is a symmetric automatic core unit, not a normal squad member. If destroyed, its reported respawn
+  countdown must finish before it returns; do not assume repeated immediate defenders or spend command_units on it.
 - Use receding-horizon control. The current strategic objective must describe the next observable outcome that can
   begin with assets and slots that exist now. It may use multiple independent actions that are executable now, but
   must not assume that a queued prerequisite has already completed. Do not present

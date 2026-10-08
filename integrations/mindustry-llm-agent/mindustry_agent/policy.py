@@ -1456,7 +1456,8 @@ def compact_state(state: dict[str, Any]) -> dict[str, Any]:
                 key: defender.get(key) for key in (
                     "enabled", "active", "id", "type", "x", "y", "health", "max_health",
                     "weapon_range_tiles", "task", "task_age_seconds", "task_progress",
-                    "carried_item", "carried_amount",
+                    "carried_item", "carried_amount", "respawn_delay_seconds",
+                    "respawn_seconds_remaining",
                 ) if defender.get(key) is not None
             }
     compact["pvp_objective"] = _pvp_objective_state(state)

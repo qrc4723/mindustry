@@ -313,19 +313,46 @@ class ActionFailureTracker:
             if bool(result.get("ok")) and no_effect is None:
                 self._failures.pop(signature, None)
                 continue
-            previous = self._failures.get(signature, {})
-            consecutive = int(previous.get("consecutive_turns", 0)) + 1 if previous.get("last_turn") == turn - 1 else 1
-            self._failures[signature] = {
-                "action": _compact_action(action),
-                "error": "no_effect" if no_effect else str(result.get("error", "unknown")),
-                "message": (no_effect or str(result.get("message", "")))[:300],
-                "diagnostics": result.get("diagnostics", {}),
-                "total_failures": int(previous.get("total_failures", 0)) + 1,
-                "consecutive_turns": consecutive,
-                "first_failed_turn": previous.get("first_failed_turn", turn),
-                "last_turn": turn,
-                "last_wave": wave,
-            }
+            self._record(
+                action,
+                error="no_effect" if no_effect else str(result.get("error", "unknown")),
+                message=no_effect or str(result.get("message", "")),
+                diagnostics=result.get("diagnostics", {}), turn=turn, wave=wave,
+            )
+
+    def update_preflight(self, skips: list[dict[str, Any]], *, turn: int, wave: Any) -> None:
+        """Keep within-episode feedback for model-authored actions filtered before execution."""
+        for skipped in skips:
+            if not isinstance(skipped, dict) or not isinstance(skipped.get("action"), dict):
+                continue
+            self._record(
+                skipped["action"], error=str(skipped.get("reason", "preflight_skip")),
+                message=str(skipped.get("message", "")), diagnostics={
+                    "phase": skipped.get("phase", "after_model_response")
+                }, turn=turn, wave=wave,
+            )
+
+    def _record(
+        self, action: dict[str, Any], *, error: str, message: str,
+        diagnostics: Any, turn: int, wave: Any,
+    ) -> None:
+        signature = _action_signature(action)
+        previous = self._failures.get(signature, {})
+        consecutive = (
+            int(previous.get("consecutive_turns", 0)) + 1
+            if previous.get("last_turn") == turn - 1 else 1
+        )
+        self._failures[signature] = {
+            "action": _compact_action(action),
+            "error": error,
+            "message": message[:300],
+            "diagnostics": diagnostics if isinstance(diagnostics, dict) else {},
+            "total_failures": int(previous.get("total_failures", 0)) + 1,
+            "consecutive_turns": consecutive,
+            "first_failed_turn": previous.get("first_failed_turn", turn),
+            "last_turn": turn,
+            "last_wave": wave,
+        }
 
     def for_prompt(self) -> dict[str, Any]:
         failures = sorted(

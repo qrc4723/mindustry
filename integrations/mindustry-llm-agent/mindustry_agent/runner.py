@@ -552,6 +552,7 @@ def run(config: AgentConfig, *, once: bool, dry_run: bool, max_turns: int | None
         action_failures.update(
             decision["actions"], action_response.get("results", []), turn=turns, wave=state.get("wave"),
         )
+        action_failures.update_preflight(preflight_skips, turn=turns, wave=state.get("wave"))
         compact_outcome = compact_action_outcome(state.get("wave"), decision, action_response, turns)
         if preflight_skips:
             compact_outcome["preflight_skips"] = preflight_skips[:8]
