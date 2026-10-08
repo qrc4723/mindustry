@@ -140,7 +140,7 @@ class RunnerTimingTest(unittest.TestCase):
             ["no_matching_commandable_units_in_observed_state"],
         )
 
-    def test_rts_preflight_preserves_matching_training_rally_and_rejects_conflict(self) -> None:
+    def test_rts_preflight_allows_existing_squad_reinforcement(self) -> None:
         state = {
             "game_mode_variant": {"id": "stockpile_rts_pvp"},
             "offensive_production": {"factories": [{"existing_instances": [{
@@ -164,7 +164,7 @@ class RunnerTimingTest(unittest.TestCase):
         ]
         executable, skipped = preflight_rts_queue_actions(state, actions)
         self.assertEqual(executable, [actions[0]])
-        self.assertEqual(skipped[0]["reason"], "training_squad_not_rally_compatible")
+        self.assertEqual(skipped[0]["reason"], "duplicate_factory_order_in_same_decision")
 
 
 if __name__ == "__main__":

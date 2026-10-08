@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -49,6 +50,7 @@ def request_json(
 class MindustryClient:
     def __init__(self, base_url: str, token: str = "", team: str = "sharded") -> None:
         self.base_url = base_url.rstrip("/")
+        self.team = team
         self.headers = {"Authorization": f"Bearer {token}"} if token else {}
         self.headers["X-Mindustry-Team"] = team
 
@@ -56,7 +58,16 @@ class MindustryClient:
         return request_json(f"{self.base_url}/health", headers=self.headers)
 
     def state(self) -> dict[str, Any]:
-        return request_json(f"{self.base_url}/v1/state", headers=self.headers)
+        last_error: HttpJsonError | None = None
+        for attempt in range(3):
+            try:
+                return request_json(f"{self.base_url}/v1/state", headers=self.headers)
+            except HttpJsonError as error:
+                last_error = error
+                if error.status_code != 503 or attempt == 2:
+                    raise
+                time.sleep(0.25 * (attempt + 1) + (0.1 if self.team == "crux" else 0.0))
+        raise last_error or HttpJsonError("State request failed without an error.")
 
     def act(
         self,

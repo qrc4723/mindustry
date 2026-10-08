@@ -656,9 +656,33 @@ def _pvp_objective_state(state: dict[str, Any]) -> dict[str, Any]:
                 )
             })
         factory_rows.append(row)
+    enemy_core_health = sum(
+        float(core_row["health"]) for core_row in enemy_cores
+        if isinstance(core_row.get("health"), (int, float))
+    )
+    enemy_core_max_health = sum(
+        float(core_row["max_health"]) for core_row in enemy_cores
+        if isinstance(core_row.get("max_health"), (int, float))
+    )
+    enemy_core_damage_fraction = (
+        max(0.0, min(1.0, 1.0 - enemy_core_health / enemy_core_max_health))
+        if enemy_core_max_health > 0 else None
+    )
     return {
         "meaning": "Factual PvP scoreboard and current offensive assets; no build order or readiness score is imposed.",
         "victory_condition": victory_condition,
+        "enemy_core_health_progress": {
+            "current_total": enemy_core_health,
+            "maximum_total": enemy_core_max_health,
+            "damage_fraction": enemy_core_damage_fraction,
+            "any_direct_victory_damage_observed": bool(
+                enemy_core_damage_fraction is not None and enemy_core_damage_fraction > 0
+            ),
+            "interpretation": (
+                "Only enemy-core destruction completes victory; control-point ownership and unit trades are not "
+                "direct victory progress."
+            ),
+        },
         "control_point_benefits": control_point_benefits,
         "own_cores_remaining": len(state.get("cores", [])),
         "enemy_cores_remaining": len(enemy_cores),

@@ -26,8 +26,14 @@ class RtsPluginContractTest(unittest.TestCase):
     def test_training_can_stage_units_in_persistent_squads(self) -> None:
         self.assertIn('"training_squad_requires_rally"', self.source)
         self.assertIn("order.squadId", self.source)
+        self.assertIn("squad.unitIds.add(unit.id)", self.source)
+        self.assertIn("RTS_EMPTY_SQUAD_RETENTION_TICKS", self.source)
         self.assertIn('row.put("operation_phase", operationPhase)', self.source)
         self.assertIn('row.put("ready_for_new_order", readyForNewOrder)', self.source)
+
+    def test_game_thread_state_requests_allow_serial_snapshot_work(self) -> None:
+        self.assertIn("GAME_THREAD_REQUEST_TIMEOUT_SECONDS = 20", self.source)
+        self.assertIn("future.get(GAME_THREAD_REQUEST_TIMEOUT_SECONDS", self.source)
 
     def test_showcase_uses_tactical_terrain_v2(self) -> None:
         self.assertIn("symmetric_three_lane_tactical_showcase_v2", self.source)

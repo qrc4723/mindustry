@@ -113,6 +113,8 @@ class LlmTest(unittest.TestCase):
         self.assertIn("pause while that owned point is contested", prompt)
         self.assertIn("up to 1.5x", prompt)
         self.assertIn("rts_control_benefits", prompt)
+        self.assertIn("enemy_core_health_progress", prompt)
+        self.assertIn("damage_fraction remains zero", prompt)
         self.assertIn("objective-side cover", prompt)
         self.assertIn("rts_battlefield", prompt)
         self.assertIn("three-lane showcase", prompt)

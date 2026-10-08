@@ -444,10 +444,10 @@ class PolicyTest(unittest.TestCase):
             }],
             "enemy_teams": [{
                 "team": {"name": "sharded", "id": 0, "color": "#00aaff"},
-                "core": {"block": "core-shard", "x": 4, "y": 12, "health": 900},
+                "core": {"block": "core-shard", "x": 4, "y": 12, "health": 900, "max_health": 1000},
                 "cores": [
-                    {"block": "core-shard", "x": 4, "y": 12, "health": 900},
-                    {"block": "core-shard", "x": 8, "y": 12, "health": 700},
+                    {"block": "core-shard", "x": 4, "y": 12, "health": 900, "max_health": 1000},
+                    {"block": "core-shard", "x": 8, "y": 12, "health": 700, "max_health": 1000},
                 ],
                 "buildings": [{
                     "block": "duo", "x": 8, "y": 12, "rotation": 2,
@@ -469,6 +469,11 @@ class PolicyTest(unittest.TestCase):
         self.assertEqual(compact["pvp_objective"]["own_cores_remaining"], 2)
         self.assertEqual(compact["pvp_objective"]["enemy_cores_remaining"], 2)
         self.assertEqual(compact["pvp_objective"]["enemy_cores"][0]["distance_tiles"], 36.0)
+        core_progress = compact["pvp_objective"]["enemy_core_health_progress"]
+        self.assertEqual(core_progress["current_total"], 1600.0)
+        self.assertEqual(core_progress["maximum_total"], 2000.0)
+        self.assertAlmostEqual(core_progress["damage_fraction"], 0.2)
+        self.assertTrue(core_progress["any_direct_victory_damage_observed"])
         self.assertEqual(compact["pvp_objective"]["commandable_friendly_units"], 1)
         enemy = compact["enemy_teams"][0]
         self.assertEqual(enemy["team"]["name"], "sharded")

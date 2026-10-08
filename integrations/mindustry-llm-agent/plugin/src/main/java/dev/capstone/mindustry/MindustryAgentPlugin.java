@@ -126,6 +126,7 @@ import java.util.stream.Collectors;
  */
 public final class MindustryAgentPlugin extends Plugin {
     private static final int DEFAULT_PORT = 8765;
+    private static final int GAME_THREAD_REQUEST_TIMEOUT_SECONDS = 20;
     private static final int MAX_ACTIONS_PER_REQUEST = 32;
     private static final int MAX_EXPLICIT_PATH_TILES = 192;
     private static final int MAX_MACRO_COPPER = 5000;
@@ -143,6 +144,7 @@ public final class MindustryAgentPlugin extends Plugin {
     private static final int MAX_PLACEMENT_HINTS_PER_BLOCK = 220;
     private static final int MACRO_PATH_RADIUS = 64;
     private static final double RTS_SQUAD_UPDATE_INTERVAL_TICKS = 30d;
+    private static final double RTS_EMPTY_SQUAD_RETENTION_TICKS = 30d * 60d;
     private static final double RTS_CONTROL_CAPTURE_RADIUS_TILES = 11d;
     private static final double RTS_CONTROL_CAPTURE_SECONDS = 12d;
     private static final double RTS_CONTROL_PRODUCTION_SPEED_BONUS_PER_POINT = 0.10d;
@@ -4447,11 +4449,6 @@ public final class MindustryAgentPlugin extends Plugin {
         if (core == null) return actionError(index, action, "no_core", "The team has no surviving core.");
         TeamAgentState agentState = teamAgentState(controlledTeam());
         RtsSquad trainingSquad = squadId.isEmpty() ? null : agentState.squads.get(squadId);
-        if (trainingSquad != null && (!"rally".equals(trainingSquad.mode)
-            || trainingSquad.targetX != rallyX || trainingSquad.targetY != rallyY)) {
-            return actionError(index, action, "training_squad_not_rally_compatible",
-                "An existing squad used by train_units must already be rallying at the same coordinate; choose a new squad_id or finish its current order.");
-        }
         Map<Item, Integer> totalCost = new LinkedHashMap<>();
         for (ItemStack stack : selected.requirements) {
             totalCost.put(stack.item, Math.multiplyExact(stack.amount, count));
@@ -4497,6 +4494,8 @@ public final class MindustryAgentPlugin extends Plugin {
             / 60f / rtsProductionSpeedMultiplier(controlledTeam()));
         if (rallyX != null) result.put("rally", Map.of("x", rallyX, "y", rallyY, "radius", rallyRadius));
         if (!squadId.isEmpty()) result.put("squad_id", squadId);
+        result.put("squad_reinforcement_behavior",
+            "a new squad rallies at the supplied coordinate; an existing squad keeps its standing order and each completed unit joins that order");
         result.put("mechanic", "one unit is created per standard plan time; this factory queue runs independently of belts and power in stockpile RTS mode");
         return result;
     }
@@ -4539,9 +4538,9 @@ public final class MindustryAgentPlugin extends Plugin {
             }
             if (!order.squadId.isEmpty()) {
                 RtsSquad squad = teamAgentState(order.team).squads.get(order.squadId);
-                if (squad != null && "rally".equals(squad.mode)) {
-                    squad.unitIds.add(unit.id);
-                    squad.assignedMemberCount = squad.unitIds.size();
+                if (squad != null) {
+                    if (squad.unitIds.add(unit.id)) squad.assignedMemberCount++;
+                    squad.emptySinceTick = Double.NaN;
                     squad.nextUpdateTick = Vars.state.tick;
                 }
             }
@@ -4980,7 +4979,14 @@ public final class MindustryAgentPlugin extends Plugin {
             // from an order that was never received. A later command with the same ID reuses it.
             for (RtsSquad squad : state.squads.values()) {
                 squad.unitIds.removeIf(id -> findOwnedCommandableUnit(team, id) == null);
+                if (squad.unitIds.isEmpty() && pendingRtsTrainingUnits(team, squad.id) == 0) {
+                    if (Double.isNaN(squad.emptySinceTick)) squad.emptySinceTick = Vars.state.tick;
+                } else {
+                    squad.emptySinceTick = Double.NaN;
+                }
             }
+            state.squads.values().removeIf(squad -> !Double.isNaN(squad.emptySinceTick)
+                && Vars.state.tick - squad.emptySinceTick >= RTS_EMPTY_SQUAD_RETENTION_TICKS);
             for (RtsSquad squad : state.squads.values()) {
                 if (squad.unitIds.isEmpty() || "stop".equals(squad.mode)
                     || Vars.state.tick < squad.nextUpdateTick) continue;
@@ -5100,11 +5106,14 @@ public final class MindustryAgentPlugin extends Plugin {
                 };
             } else executionStatus = "moving_to_target";
             String operationPhase;
-            if (stalled) operationPhase = "stalled";
+            if (livingUnits.isEmpty()) {
+                if (pendingTrainingUnits > 0) operationPhase = "producing";
+                else if (squad.assignedMemberCount > 0) operationPhase = "eliminated";
+                else operationPhase = "empty";
+            } else if (stalled) operationPhase = "stalled";
             else if (engaging > 0) operationPhase = "engaging";
             else if ("rally".equals(squad.mode)) {
-                if (pendingTrainingUnits > 0 && livingUnits.isEmpty()) operationPhase = "producing";
-                else if (readyForNewOrder) operationPhase = "ready";
+                if (readyForNewOrder) operationPhase = "ready";
                 else operationPhase = "assembling";
             } else if ("attack".equals(squad.mode) || "attack_move".equals(squad.mode)) {
                 operationPhase = arrived == livingUnits.size() && !livingUnits.isEmpty() ? "at_objective" : "advancing";
@@ -6146,6 +6155,7 @@ public final class MindustryAgentPlugin extends Plugin {
         private int assignedMemberCount;
         private double lastAverageDistanceTiles = Double.NaN;
         private double lastProgressTick;
+        private double emptySinceTick = Double.NaN;
 
         private RtsSquad(String id) {
             this.id = id;
@@ -6440,7 +6450,7 @@ public final class MindustryAgentPlugin extends Plugin {
             }
         });
         try {
-            return future.get(8, TimeUnit.SECONDS);
+            return future.get(GAME_THREAD_REQUEST_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         } catch (ExecutionException error) {
             Throwable cause = error.getCause();
             if (cause instanceof Exception exception) throw exception;

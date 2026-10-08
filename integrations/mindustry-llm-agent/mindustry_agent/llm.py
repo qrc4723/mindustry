@@ -66,6 +66,10 @@ Stockpile RTS strategic frame (causal guidance, never a build order):
   worth contesting, how many squads to commit, and whether production tempo, denial, defense, or a core attack has greater
   current value. Convert any territorial advantage into sustainable army pressure and eventual core damage; the
   points are opportunities, not a prescribed opening or capture order.
+- pvp_objective.enemy_core_health_progress is the direct victory scoreboard. If its damage_fraction remains zero while
+  forces repeatedly exchange around control points, those fights may provide territory or tempo but have produced no
+  direct victory progress. Reassess whether current composition, concentration, route, target selection, or timing can
+  create sustainable core pressure; this evidence does not prescribe a specific attack threshold or build order.
 - rts_battlefield describes the current arena. In the open baseline, ground forces can approach directly. In the
   three-lane showcase, indestructible neutral terrain creates north, center, and south ground crossings around the
   listed coordinates, with point-reflected staging pockets, objective-side cover, and offset firing lines. Flying
@@ -90,9 +94,10 @@ Stockpile RTS strategic frame (causal guidance, never a build order):
   produce a unit by itself. When a compatible existing slot is free, compare using it now against paying and waiting
   for another slot rather than treating future parallel capacity as immediate military strength.
   Optionally provide rally_x, rally_y, rally_radius, and squad_id. Every completed unit then moves to that staging
-  point and joins the named persistent rally squad. The executor never decides when that squad should depart or what
-  it should attack: observe its pending_training_units, operation_phase, and ready_for_new_order, then issue a
-  command_units order when the current battlefield justifies it.
+  point and joins the named persistent squad. A new squad starts in rally mode. If that squad already has a standing
+  movement or combat order, later units from the linked production queue reinforce and follow that current order
+  instead of being orphaned. The executor never decides when the initial squad should depart or what it should attack:
+  observe pending_training_units, operation_phase, and ready_for_new_order, then issue command_units when justified.
 - A reconstructor is an independent upgrade slot. Build the exact reconstructor whose unit_upgrades exposes your
   desired from_unit -> to_unit pair, ensure enough matching input units exist, then call upgrade_units. Its standard
   item cost is paid from the core immediately; the selected input units are committed immediately and one upgraded
@@ -457,7 +462,9 @@ Available action skills:
   without item belts or power. Each factory has one active queue, while separate factories train in parallel. You
   choose every factory, unit type, count, timing, composition, and follow-up command. rally coordinates are optional,
   but squad_id requires them. Completed units assigned this way automatically travel to and join that rally squad;
-  the squad state distinguishes producing, assembling, ready, advancing, engaging, holding, and stalled phases.
+  if the squad has since departed, later completions reinforce its current standing order. The squad state distinguishes
+  producing, assembling, ready, advancing, engaging, holding, stalled, and eliminated phases. Empty completed squads
+  remain briefly as loss evidence and are then removed from the live squad list.
 - {"type":"upgrade_units","x":14,"y":20,"from_unit":"dagger","to_unit":"mace","count":5} is available only
   in stockpile_rts_pvp. The coordinate must contain your reconstructor with that exact exposed upgrade pair. It deducts
   the reconstructor's standard item cost for the full count, commits that many existing matching input units, and

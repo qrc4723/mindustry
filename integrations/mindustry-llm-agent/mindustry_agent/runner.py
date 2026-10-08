@@ -207,24 +207,6 @@ def preflight_rts_queue_actions(
                     ),
                 })
                 continue
-        if action_type == "train_units" and action.get("squad_id"):
-            existing_squad = squads.get(str(action["squad_id"]))
-            target = (existing_squad or {}).get("target") or {}
-            if existing_squad and (
-                existing_squad.get("mode") != "rally"
-                or action.get("rally_x") != target.get("x")
-                or action.get("rally_y") != target.get("y")
-            ):
-                skipped.append({
-                    "original_index": index,
-                    "action": action,
-                    "reason": "training_squad_not_rally_compatible",
-                    "message": (
-                        "Skipped because this squad already has a different standing order or rally point. "
-                        "Choose a new squad_id, or wait and explicitly change the existing squad's intent."
-                    ),
-                })
-                continue
         if action_type not in {"train_units", "upgrade_units"}:
             executable.append(action)
             continue
