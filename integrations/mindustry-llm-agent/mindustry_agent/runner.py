@@ -58,15 +58,27 @@ def preflight_rts_queue_actions(
                 factory_slots[(x, y)] = bool(instance.get("available_for_new_order"))
 
     reconstructor_slots: dict[tuple[int, int], bool] = {}
+    reconstructor_upgrades: dict[tuple[int, int], dict[tuple[str, str], int]] = {}
     for reconstructor in production.get("reconstructors", []):
         if not isinstance(reconstructor, dict):
             continue
+        supported_upgrades: dict[tuple[str, str], int] = {}
+        for upgrade in reconstructor.get("upgrades", []):
+            if not isinstance(upgrade, dict):
+                continue
+            from_unit, to_unit = upgrade.get("from_unit"), upgrade.get("to_unit")
+            if not isinstance(from_unit, str) or not isinstance(to_unit, str):
+                continue
+            supported_upgrades[(from_unit, to_unit)] = int(
+                upgrade.get("maximum_startable_now_from_resources_and_units", 0) or 0
+            )
         for instance in reconstructor.get("existing_instances", []):
             if not isinstance(instance, dict):
                 continue
             x, y = instance.get("x"), instance.get("y")
             if isinstance(x, int) and isinstance(y, int):
                 reconstructor_slots[(x, y)] = bool(instance.get("available_for_new_order"))
+                reconstructor_upgrades[(x, y)] = supported_upgrades
 
     placement_options: dict[str, dict[str, Any]] = {}
     raw_placement = state.get("rts_production_placement_options")
@@ -162,7 +174,10 @@ def preflight_rts_queue_actions(
                 )
             )
             same_order = (
-                int(squad.get("member_count", 0) or 0) > 0
+                (
+                    int(squad.get("member_count", 0) or 0) > 0
+                    or int(squad.get("pending_training_units", 0) or 0) > 0
+                )
                 and action.get("mode") == squad.get("mode")
                 and same_target
                 and int(action.get("engagement_radius", 14))
@@ -174,7 +189,7 @@ def preflight_rts_queue_actions(
                     "action": action,
                     "reason": "standing_squad_order_already_active",
                     "message": (
-                        "Skipped because this living squad already has the identical persistent order. "
+                        "Skipped because this active or producing squad already has the identical persistent order. "
                         "The engine continues it without reissuing; send another command only to change intent "
                         "or provide explicit unit_ids to replace/reinforce membership."
                     ),
@@ -183,18 +198,18 @@ def preflight_rts_queue_actions(
         if action_type == "command_units":
             existing_squad = squads.get(str(action.get("squad_id", "")))
             existing_members = int((existing_squad or {}).get("member_count", 0) or 0)
+            pending_members = int((existing_squad or {}).get("pending_training_units", 0) or 0)
             explicit_ids = action.get("unit_ids")
-            if isinstance(explicit_ids, list):
+            if isinstance(explicit_ids, list) and explicit_ids:
                 has_selectable_units = any(unit_id in commandable_ids for unit_id in explicit_ids)
+            elif existing_squad is not None:
+                has_selectable_units = existing_members > 0 or pending_members > 0
             else:
                 requested_type = str(action.get("unit", ""))
                 has_selectable_units = (
-                    existing_members > 0
-                    or (
-                        sum(commandable_counts.values()) > 0
-                        if requested_type == "all"
-                        else commandable_counts.get(requested_type, 0) > 0
-                    )
+                    sum(commandable_counts.values()) > 0
+                    if requested_type == "all"
+                    else commandable_counts.get(requested_type, 0) > 0
                 )
             if not has_selectable_units:
                 skipped.append({
@@ -203,7 +218,8 @@ def preflight_rts_queue_actions(
                     "reason": "no_matching_commandable_units_in_observed_state",
                     "message": (
                         "Skipped because no produced commandable unit in the observed state matches this order. "
-                        "Queued units are not selectable; wait until production completes or choose living unit IDs."
+                        "A named squad with pending training can receive a standing order; otherwise wait until "
+                        "production completes or choose living unit IDs."
                     ),
                 })
                 continue
@@ -221,6 +237,32 @@ def preflight_rts_queue_actions(
         elif coordinate in claimed:
             reason = f"duplicate_{facility}_order_in_same_decision"
         else:
+            if action_type == "upgrade_units":
+                pair = (str(action.get("from_unit", "")), str(action.get("to_unit", "")))
+                supported = reconstructor_upgrades.get(coordinate, {})
+                if pair not in supported:
+                    skipped.append({
+                        "original_index": index,
+                        "action": action,
+                        "reason": "unsupported_upgrade_pair_in_observed_state",
+                        "message": (
+                            "Skipped because this reconstructor does not expose the requested exact upgrade pair. "
+                            "Choose a pair listed for this facility in offensive_production."
+                        ),
+                    })
+                    continue
+                requested_count = int(action.get("count", 1) or 1)
+                if requested_count > supported[pair]:
+                    skipped.append({
+                        "original_index": index,
+                        "action": action,
+                        "reason": "insufficient_upgrade_inputs_or_resources_in_observed_state",
+                        "message": (
+                            "Skipped because the requested count exceeds the observed maximum startable now for "
+                            "this exact pair. Re-observe or request no more than the reported maximum."
+                        ),
+                    })
+                    continue
             claimed.add(coordinate)
             executable.append(action)
             continue

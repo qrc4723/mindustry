@@ -31,6 +31,13 @@ class RtsPluginContractTest(unittest.TestCase):
         self.assertIn('row.put("operation_phase", operationPhase)', self.source)
         self.assertIn('row.put("ready_for_new_order", readyForNewOrder)', self.source)
 
+    def test_pending_squad_can_receive_a_standing_order(self) -> None:
+        self.assertIn("acceptsPendingStandingOrder", self.source)
+        self.assertIn("useExistingMembership && requestedUnitIds.isEmpty()", self.source)
+        self.assertIn('result.put("standing_order_registered_for_pending_units"', self.source)
+        self.assertIn('row.put("standing_order_registered_without_live_members"', self.source)
+        self.assertIn("pendingReinforcements", self.source)
+
     def test_game_thread_state_requests_allow_serial_snapshot_work(self) -> None:
         self.assertIn("GAME_THREAD_REQUEST_TIMEOUT_SECONDS = 20", self.source)
         self.assertIn("future.get(GAME_THREAD_REQUEST_TIMEOUT_SECONDS", self.source)

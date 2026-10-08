@@ -48,7 +48,10 @@ class RunnerTimingTest(unittest.TestCase):
                     {"x": 10, "y": 20, "available_for_new_order": False},
                     {"x": 11, "y": 20, "available_for_new_order": True},
                 ]}],
-                "reconstructors": [{"existing_instances": [
+                "reconstructors": [{"upgrades": [{
+                    "from_unit": "dagger", "to_unit": "mace",
+                    "maximum_startable_now_from_resources_and_units": 2,
+                }], "existing_instances": [
                     {"x": 15, "y": 20, "available_for_new_order": True},
                 ]}],
             },
@@ -101,7 +104,10 @@ class RunnerTimingTest(unittest.TestCase):
                         "available_for_new_order": True,
                     },
                 ]}],
-                "reconstructors": [{"existing_instances": [
+                "reconstructors": [{"upgrades": [{
+                    "from_unit": "dagger", "to_unit": "mace",
+                    "maximum_startable_now_from_resources_and_units": 1,
+                }], "existing_instances": [
                     {
                         "facility_id": "reconstructor:14:20", "x": 14, "y": 20,
                         "available_for_new_order": True,
@@ -165,6 +171,78 @@ class RunnerTimingTest(unittest.TestCase):
         executable, skipped = preflight_rts_queue_actions(state, actions)
         self.assertEqual(executable, [actions[0]])
         self.assertEqual(skipped[0]["reason"], "duplicate_factory_order_in_same_decision")
+
+    def test_rts_preflight_allows_standing_order_for_pending_squad(self) -> None:
+        state = {
+            "game_mode_variant": {"id": "stockpile_rts_pvp"},
+            "offensive_production": {"factories": [], "reconstructors": []},
+            "rts_squads": [{
+                "squad_id": "alpha", "mode": "rally", "member_count": 0,
+                "pending_training_units": 4, "target": {"x": 30, "y": 40},
+            }],
+            "friendly_units": [],
+        }
+        action = {
+            "type": "command_units", "unit": "dagger", "squad_id": "alpha",
+            "unit_ids": [], "mode": "attack_move", "target_x": 90, "target_y": 40,
+            "max_units": 4,
+        }
+        executable, skipped = preflight_rts_queue_actions(state, [action])
+        self.assertEqual(executable, [action])
+        self.assertEqual(skipped, [])
+
+    def test_rts_preflight_does_not_implicitly_refill_an_empty_existing_squad(self) -> None:
+        state = {
+            "game_mode_variant": {"id": "stockpile_rts_pvp"},
+            "offensive_production": {"factories": [], "reconstructors": []},
+            "rts_squads": [{
+                "squad_id": "lost", "mode": "attack_move", "member_count": 0,
+                "pending_training_units": 0, "target": {"x": 90, "y": 40},
+            }],
+            "friendly_units": [{"id": 44, "type": "dagger", "commandable": True}],
+        }
+        action = {
+            "type": "command_units", "unit": "dagger", "squad_id": "lost",
+            "mode": "retreat", "max_units": 4,
+        }
+        executable, skipped = preflight_rts_queue_actions(state, [action])
+        self.assertEqual(executable, [])
+        self.assertEqual(skipped[0]["reason"], "no_matching_commandable_units_in_observed_state")
+
+    def test_rts_preflight_checks_upgrade_pair_and_startable_count(self) -> None:
+        state = {
+            "game_mode_variant": {"id": "stockpile_rts_pvp"},
+            "offensive_production": {
+                "factories": [],
+                "reconstructors": [{
+                    "upgrades": [{
+                        "from_unit": "dagger", "to_unit": "mace",
+                        "maximum_startable_now_from_resources_and_units": 2,
+                    }],
+                    "existing_instances": [{
+                        "x": 14, "y": 20, "available_for_new_order": True,
+                    }],
+                }],
+            },
+            "rts_squads": [],
+            "friendly_units": [],
+        }
+        actions = [
+            {
+                "type": "upgrade_units", "x": 14, "y": 20,
+                "from_unit": "nova", "to_unit": "pulsar", "count": 1,
+            },
+            {
+                "type": "upgrade_units", "x": 14, "y": 20,
+                "from_unit": "dagger", "to_unit": "mace", "count": 3,
+            },
+        ]
+        executable, skipped = preflight_rts_queue_actions(state, actions)
+        self.assertEqual(executable, [])
+        self.assertEqual([item["reason"] for item in skipped], [
+            "unsupported_upgrade_pair_in_observed_state",
+            "insufficient_upgrade_inputs_or_resources_in_observed_state",
+        ])
 
 
 if __name__ == "__main__":

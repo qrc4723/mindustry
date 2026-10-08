@@ -4778,8 +4778,10 @@ public final class MindustryAgentPlugin extends Plugin {
 
         TeamAgentState agentState = teamAgentState(team);
         RtsSquad existingSquad = squadId.isEmpty() ? null : agentState.squads.get(squadId);
-        boolean useExistingMembership = existingSquad != null && !existingSquad.unitIds.isEmpty()
-            && requestedUnitIds.isEmpty();
+        int pendingReinforcements = existingSquad == null ? 0 : pendingRtsTrainingUnits(team, squadId);
+        boolean acceptsPendingStandingOrder = existingSquad != null && requestedUnitIds.isEmpty()
+            && pendingReinforcements > 0;
+        boolean useExistingMembership = existingSquad != null && requestedUnitIds.isEmpty();
         if (useExistingMembership) requestedUnitIds.addAll(existingSquad.unitIds);
 
         boolean needsTarget = Set.of("attack", "attack_move", "rally", "defend").contains(mode);
@@ -4836,6 +4838,7 @@ public final class MindustryAgentPlugin extends Plugin {
         List<Unit> candidates = new ArrayList<>();
         for (Unit unit : team.data().units) {
             if (unit == coreDefender || unit.dead() || !unit.isAdded() || !unit.isCommandable()) continue;
+            if (useExistingMembership && requestedUnitIds.isEmpty()) continue;
             if (!useExistingMembership && !"all".equals(unitName) && !unit.type.name.equals(unitName)) continue;
             if (!requestedUnitIds.isEmpty() && !requestedUnitIds.contains(unit.id)) continue;
             if (!useExistingMembership && requestedUnitIds.isEmpty() && !squadId.isEmpty()
@@ -4864,9 +4867,10 @@ public final class MindustryAgentPlugin extends Plugin {
             ));
         }
 
+        boolean accepted = !commanded.isEmpty() || acceptsPendingStandingOrder;
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("index", index);
-        result.put("ok", !commanded.isEmpty());
+        result.put("ok", accepted);
         result.put("type", "command_units");
         result.put("mode", mode);
         result.put("effective_mode", effectiveMode);
@@ -4876,6 +4880,9 @@ public final class MindustryAgentPlugin extends Plugin {
         if (requestedTargetUnitId != null) result.put("requested_target_unit_id", requestedTargetUnitId);
         result.put("commanded_count", commanded.size());
         result.put("commanded_units", commanded);
+        result.put("pending_reinforcements", pendingReinforcements);
+        result.put("standing_order_registered_for_pending_units",
+            commanded.isEmpty() && acceptsPendingStandingOrder);
         result.put("target", Map.of("x", targetX, "y", targetY));
         if (attackTarget != null) {
             Map<String, Object> resolvedTarget = new LinkedHashMap<>();
@@ -4886,7 +4893,7 @@ public final class MindustryAgentPlugin extends Plugin {
             result.put("attack_target", resolvedTarget);
         }
         if (fallbackReason != null) result.put("fallback_reason", fallbackReason);
-        if (!squadId.isEmpty() && !commanded.isEmpty()) {
+        if (!squadId.isEmpty() && accepted) {
             RtsSquad squad = existingSquad == null ? new RtsSquad(squadId) : existingSquad;
             if (!useExistingMembership || action.has("unit_ids")) {
                 squad.unitIds.clear();
@@ -4909,15 +4916,18 @@ public final class MindustryAgentPlugin extends Plugin {
             squad.nextUpdateTick = Vars.state.tick + RTS_SQUAD_UPDATE_INTERVAL_TICKS;
             agentState.squads.put(squadId, squad);
         }
-        if (commanded.isEmpty()) {
+        if (!accepted) {
             result.put("error", "no_matching_commandable_units");
             result.put("message", "No matching produced units can execute this command; the automatic core unit uses command_core_unit.");
+        } else if (commanded.isEmpty()) {
+            result.put("message",
+                "Standing order registered; pending squad reinforcements will execute it as they finish training.");
         }
         List<Integer> commandedIds = commanded.stream()
             .map(row -> (Integer)row.get("id")).toList();
         agentState.recentUnitCommands.addLast(new RtsUnitCommandReceipt(
-            Vars.state.tick, squadId, unitName, mode, effectiveMode, commandedIds,
-            targetX, targetY, fallbackReason
+            Vars.state.tick, squadId, unitName, mode, effectiveMode, commandedIds, accepted,
+            pendingReinforcements, targetX, targetY, fallbackReason
         ));
         while (agentState.recentUnitCommands.size() > 12) agentState.recentUnitCommands.removeFirst();
         return result;
@@ -5209,13 +5219,16 @@ public final class MindustryAgentPlugin extends Plugin {
         for (RtsUnitCommandReceipt receipt : teamAgentState(team).recentUnitCommands) {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("seconds_ago", Math.max(0d, Vars.state.tick - receipt.tick) / 60d);
-            row.put("accepted", !receipt.unitIds.isEmpty());
+            row.put("accepted", receipt.accepted);
             if (!receipt.squadId.isBlank()) row.put("squad_id", receipt.squadId);
             row.put("unit_selector", receipt.unitSelector);
             row.put("requested_mode", receipt.requestedMode);
             row.put("effective_mode", receipt.effectiveMode);
             row.put("commanded_count", receipt.unitIds.size());
             row.put("commanded_unit_ids", receipt.unitIds);
+            row.put("pending_reinforcements", receipt.pendingReinforcements);
+            row.put("standing_order_registered_without_live_members",
+                receipt.accepted && receipt.unitIds.isEmpty() && receipt.pendingReinforcements > 0);
             row.put("target", Map.of("x", receipt.targetX, "y", receipt.targetY));
             if (receipt.fallbackReason != null) row.put("fallback_reason", receipt.fallbackReason);
             result.add(row);
@@ -6192,14 +6205,16 @@ public final class MindustryAgentPlugin extends Plugin {
         private final String requestedMode;
         private final String effectiveMode;
         private final List<Integer> unitIds;
+        private final boolean accepted;
+        private final int pendingReinforcements;
         private final int targetX;
         private final int targetY;
         private final String fallbackReason;
 
         private RtsUnitCommandReceipt(
             double tick, String squadId, String unitSelector, String requestedMode,
-            String effectiveMode, List<Integer> unitIds, int targetX, int targetY,
-            String fallbackReason
+            String effectiveMode, List<Integer> unitIds, boolean accepted,
+            int pendingReinforcements, int targetX, int targetY, String fallbackReason
         ) {
             this.tick = tick;
             this.squadId = squadId;
@@ -6207,6 +6222,8 @@ public final class MindustryAgentPlugin extends Plugin {
             this.requestedMode = requestedMode;
             this.effectiveMode = effectiveMode;
             this.unitIds = List.copyOf(unitIds);
+            this.accepted = accepted;
+            this.pendingReinforcements = pendingReinforcements;
             this.targetX = targetX;
             this.targetY = targetY;
             this.fallbackReason = fallbackReason;
