@@ -59,7 +59,9 @@ Stockpile RTS strategic frame (causal guidance, never a build order):
 - rts_control_points are neutral territory objectives captured by uncontested combat-unit presence. They never satisfy
   the victory condition and provide no resource income. Each owned point gives that team 10% faster unit training and
   upgrading, stacking to 30%, and heals friendly combat units inside its uncontested radius by 1% of maximum health
-  per second. rts_control_benefits reports exact ownership and current multipliers. Each point also shows its capture
+  per second. Both benefits pause while that owned point is contested. Additional friendly occupants accelerate
+  capture only up to 1.5x, so piling every unit onto one point has diminishing capture value. rts_control_benefits
+  reports exact ownership, active benefit points, and current multipliers. Each point also shows its capture
   radius, owner/progress, and local force presence. Decide which points are
   worth contesting, how many squads to commit, and whether production tempo, denial, defense, or a core attack has greater
   current value. Convert any territorial advantage into sustainable army pressure and eventual core damage; the
@@ -87,6 +89,10 @@ Stockpile RTS strategic frame (causal guidance, never a build order):
   factories can run parallel queues; one factory accepts only one active queue at a time. A new factory does not
   produce a unit by itself. When a compatible existing slot is free, compare using it now against paying and waiting
   for another slot rather than treating future parallel capacity as immediate military strength.
+  Optionally provide rally_x, rally_y, rally_radius, and squad_id. Every completed unit then moves to that staging
+  point and joins the named persistent rally squad. The executor never decides when that squad should depart or what
+  it should attack: observe its pending_training_units, operation_phase, and ready_for_new_order, then issue a
+  command_units order when the current battlefield justifies it.
 - A reconstructor is an independent upgrade slot. Build the exact reconstructor whose unit_upgrades exposes your
   desired from_unit -> to_unit pair, ensure enough matching input units exist, then call upgrade_units. Its standard
   item cost is paid from the core immediately; the selected input units are committed immediately and one upgraded
@@ -444,11 +450,14 @@ Available action skills:
 - {"type":"remove","x":10,"y":20} removes an owned non-core building with no refund, allowing redesign or
   replacement. A higher-tier building is a separate block, not an in-place upgrade.
 - {"type":"set_unit_factory_plan","x":10,"y":20,"unit":"dagger"} selects a plan exposed by that factory.
-- {"type":"train_units","x":10,"y":20,"unit":"dagger","count":5} is available only when
+- {"type":"train_units","x":10,"y":20,"unit":"dagger","count":5,
+   "rally_x":18,"rally_y":22,"rally_radius":4,"squad_id":"alpha"} is available only when
   game_mode_variant.id is stockpile_rts_pvp. It selects that factory's compatible plan, deducts the complete standard
   item cost for the requested count from core stock immediately, and trains sequentially at the plan's standard time
   without item belts or power. Each factory has one active queue, while separate factories train in parallel. You
-  choose every factory, unit type, count, timing, composition, and follow-up command.
+  choose every factory, unit type, count, timing, composition, and follow-up command. rally coordinates are optional,
+  but squad_id requires them. Completed units assigned this way automatically travel to and join that rally squad;
+  the squad state distinguishes producing, assembling, ready, advancing, engaging, holding, and stalled phases.
 - {"type":"upgrade_units","x":14,"y":20,"from_unit":"dagger","to_unit":"mace","count":5} is available only
   in stockpile_rts_pvp. The coordinate must contain your reconstructor with that exact exposed upgrade pair. It deducts
   the reconstructor's standard item cost for the full count, commits that many existing matching input units, and

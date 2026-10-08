@@ -204,6 +204,36 @@ def validate_decision(raw: dict[str, Any]) -> dict[str, Any]:
             else:
                 normalized_action["x"] = _integer(action.get("x"), f"actions[{index}].x")
                 normalized_action["y"] = _integer(action.get("y"), f"actions[{index}].y")
+            has_rally_x = action.get("rally_x") is not None
+            has_rally_y = action.get("rally_y") is not None
+            if has_rally_x != has_rally_y:
+                raise DecisionError(
+                    f"actions[{index}].rally_x and rally_y must be supplied together."
+                )
+            if has_rally_x:
+                normalized_action["rally_x"] = _integer(
+                    action.get("rally_x"), f"actions[{index}].rally_x"
+                )
+                normalized_action["rally_y"] = _integer(
+                    action.get("rally_y"), f"actions[{index}].rally_y"
+                )
+                normalized_action["rally_radius"] = _bounded_integer(
+                    action.get("rally_radius", 4),
+                    f"actions[{index}].rally_radius", 2, 12,
+                )
+            if action.get("squad_id") is not None:
+                squad_id = _required_string(
+                    action.get("squad_id"), f"actions[{index}].squad_id"
+                )
+                if not re.fullmatch(r"[A-Za-z0-9_-]{1,40}", squad_id):
+                    raise DecisionError(
+                        f"actions[{index}].squad_id must contain 1-40 letters, digits, underscores, or hyphens."
+                    )
+                if not has_rally_x:
+                    raise DecisionError(
+                        f"actions[{index}].squad_id requires rally_x and rally_y."
+                    )
+                normalized_action["squad_id"] = squad_id
             normalized.append(normalized_action)
         elif action_type == "upgrade_units":
             normalized_action = {

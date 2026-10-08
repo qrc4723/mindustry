@@ -887,7 +887,7 @@ public final class MindustryAgentPlugin extends Plugin {
                 point.capturingTeam = team;
                 point.captureProgress = 0d;
             }
-            double strength = Math.min(3, occupant.getValue());
+            double strength = Math.min(1.5d, 1d + Math.max(0, occupant.getValue() - 1) * 0.25d);
             point.captureProgress = Math.min(1d,
                 point.captureProgress + strength / (RTS_CONTROL_CAPTURE_SECONDS * 60d));
             if (point.captureProgress >= 1d) {
@@ -901,7 +901,7 @@ public final class MindustryAgentPlugin extends Plugin {
         if (elapsedTicks <= 0d) return;
         double repairFraction = RTS_CONTROL_REPAIR_MAX_HEALTH_PER_SECOND * elapsedTicks / 60d;
         for (RtsControlPoint point : rtsControlPoints) {
-            if (point.owner == null || point.contested) continue;
+            if (point.owner == null || point.contested || point.capturingTeam != null) continue;
             for (Unit unit : point.owner.data().units) {
                 if (unit.dead() || !unit.isAdded() || !unit.type.canAttack || !unit.type.hasWeapons()
                     || unit.health >= unit.maxHealth) continue;
@@ -926,6 +926,11 @@ public final class MindustryAgentPlugin extends Plugin {
             row.put("capturing_team", point.capturingTeam == null ? null : point.capturingTeam.name);
             row.put("capture_progress", point.captureProgress);
             row.put("contested", point.contested);
+            row.put("benefit_active", point.owner != null && !point.contested && point.capturingTeam == null);
+            int capturingPresence = point.capturingTeam == null
+                ? 0 : point.lastPresence.getOrDefault(point.capturingTeam.id, 0);
+            row.put("capture_speed_multiplier", capturingPresence > 0
+                ? Math.min(1.5d, 1d + Math.max(0, capturingPresence - 1) * 0.25d) : 0d);
             Map<String, Integer> presence = new LinkedHashMap<>();
             for (Team team : configuredAgentTeams()) {
                 presence.put(team.name, point.lastPresence.getOrDefault(team.id, 0));
@@ -956,11 +961,14 @@ public final class MindustryAgentPlugin extends Plugin {
         result.put("friendly_unit_repair_max_health_fraction_per_second_in_owned_radius",
             RTS_CONTROL_REPAIR_MAX_HEALTH_PER_SECOND);
         result.put("owned_points", ownedRtsControlPointCount(observer));
+        result.put("active_benefit_points", activeRtsControlPointCount(observer));
+        result.put("contested_owned_points_suspend_benefits", true);
         result.put("current_production_and_upgrade_speed_multiplier", rtsProductionSpeedMultiplier(observer));
         Map<String, Object> teams = new LinkedHashMap<>();
         for (Team team : configuredAgentTeams()) {
             teams.put(team.name, Map.of(
                 "owned_points", ownedRtsControlPointCount(team),
+                "active_benefit_points", activeRtsControlPointCount(team),
                 "production_and_upgrade_speed_multiplier", rtsProductionSpeedMultiplier(team)
             ));
         }
@@ -974,8 +982,16 @@ public final class MindustryAgentPlugin extends Plugin {
         return count;
     }
 
+    private int activeRtsControlPointCount(Team team) {
+        int count = 0;
+        for (RtsControlPoint point : rtsControlPoints) {
+            if (point.owner == team && !point.contested && point.capturingTeam == null) count++;
+        }
+        return count;
+    }
+
     private double rtsProductionSpeedMultiplier(Team team) {
-        return 1d + ownedRtsControlPointCount(team) * RTS_CONTROL_PRODUCTION_SPEED_BONUS_PER_POINT;
+        return 1d + activeRtsControlPointCount(team) * RTS_CONTROL_PRODUCTION_SPEED_BONUS_PER_POINT;
     }
 
     private void updateRtsControlPointVisuals() {
@@ -1263,7 +1279,12 @@ public final class MindustryAgentPlugin extends Plugin {
                 Map.of("type", "upgrade_input_network", "target_x", 30, "target_y", 40, "transport", "titanium-conveyor", "max_cost", 300, "reserve_copper", 40),
                 Map.of("type", "connect_power", "node_x", 10, "node_y", 20, "target_x", 30, "target_y", 40),
                 Map.of("type", "set_unit_factory_plan", "x", 10, "y", 20, "unit", "dagger"),
-                Map.of("type", "train_units", "x", 10, "y", 20, "unit", "dagger", "count", 5),
+                Map.ofEntries(
+                    Map.entry("type", "train_units"), Map.entry("x", 10), Map.entry("y", 20),
+                    Map.entry("unit", "dagger"), Map.entry("count", 5),
+                    Map.entry("rally_x", 18), Map.entry("rally_y", 22), Map.entry("rally_radius", 4),
+                    Map.entry("squad_id", "alpha")
+                ),
                 Map.of("type", "upgrade_units", "x", 15, "y", 20, "from_unit", "dagger", "to_unit", "mace", "count", 5),
                 Map.ofEntries(
                     Map.entry("type", "command_units"), Map.entry("unit", "dagger"),
@@ -4380,6 +4401,26 @@ public final class MindustryAgentPlugin extends Plugin {
         int y = requireInt(action, "y");
         String unitName = requireString(action, "unit");
         int count = Math.max(1, Math.min(requireInt(action, "count"), MAX_RTS_TRAIN_COUNT));
+        boolean hasRallyX = action.has("rally_x"), hasRallyY = action.has("rally_y");
+        if (hasRallyX != hasRallyY) {
+            return actionError(index, action, "incomplete_training_rally",
+                "rally_x and rally_y must be supplied together.");
+        }
+        Integer rallyX = hasRallyX ? requireInt(action, "rally_x") : null;
+        Integer rallyY = hasRallyY ? requireInt(action, "rally_y") : null;
+        int rallyRadius = Math.max(2, Math.min(optionalInt(action, "rally_radius", 4), 12));
+        String squadId = optionalString(action, "squad_id", "").trim();
+        if (!squadId.isEmpty() && !squadId.matches("[A-Za-z0-9_-]{1,40}")) {
+            return actionError(index, action, "invalid_squad_id",
+                "squad_id must contain 1-40 letters, digits, underscores, or hyphens.");
+        }
+        if (!squadId.isEmpty() && rallyX == null) {
+            return actionError(index, action, "training_squad_requires_rally",
+                "squad_id requires rally_x and rally_y so newly produced units have an explicit staging point.");
+        }
+        if (rallyX != null && Vars.world.tile(rallyX, rallyY) == null) {
+            return actionError(index, action, "training_rally_out_of_bounds", rallyX + "," + rallyY);
+        }
         Building building = ownedBuildingAt(x, y);
         if (!(building instanceof UnitFactoryBuild factory) || !(building.block instanceof UnitFactory block)) {
             return actionError(index, action, "invalid_unit_factory", "No owned unit factory at " + x + "," + y);
@@ -4404,6 +4445,13 @@ public final class MindustryAgentPlugin extends Plugin {
 
         CoreBuild core = controlledTeam().core();
         if (core == null) return actionError(index, action, "no_core", "The team has no surviving core.");
+        TeamAgentState agentState = teamAgentState(controlledTeam());
+        RtsSquad trainingSquad = squadId.isEmpty() ? null : agentState.squads.get(squadId);
+        if (trainingSquad != null && (!"rally".equals(trainingSquad.mode)
+            || trainingSquad.targetX != rallyX || trainingSquad.targetY != rallyY)) {
+            return actionError(index, action, "training_squad_not_rally_compatible",
+                "An existing squad used by train_units must already be rallying at the same coordinate; choose a new squad_id or finish its current order.");
+        }
         Map<Item, Integer> totalCost = new LinkedHashMap<>();
         for (ItemStack stack : selected.requirements) {
             totalCost.put(stack.item, Math.multiplyExact(stack.amount, count));
@@ -4420,9 +4468,21 @@ public final class MindustryAgentPlugin extends Plugin {
         factory.configure(planIndex);
         RtsTrainingOrder order = new RtsTrainingOrder(
             controlledTeam(), x, y, unitName, count, selected.time, Vars.state.tick + selected.time,
-            Vars.state.tick, namedCost(totalCost)
+            Vars.state.tick, namedCost(totalCost), rallyX, rallyY, rallyRadius, squadId
         );
         rtsTrainingOrders.add(order);
+        if (!squadId.isEmpty() && trainingSquad == null) {
+            trainingSquad = new RtsSquad(squadId);
+            trainingSquad.unitSelector = unitName;
+            trainingSquad.mode = "rally";
+            trainingSquad.targetX = rallyX;
+            trainingSquad.targetY = rallyY;
+            trainingSquad.targetRadius = rallyRadius;
+            trainingSquad.assignedTick = Vars.state.tick;
+            trainingSquad.lastProgressTick = Vars.state.tick;
+            trainingSquad.nextUpdateTick = Vars.state.tick;
+            agentState.squads.put(squadId, trainingSquad);
+        }
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("index", index);
         result.put("ok", true);
@@ -4435,6 +4495,8 @@ public final class MindustryAgentPlugin extends Plugin {
         result.put("current_control_point_speed_multiplier", rtsProductionSpeedMultiplier(controlledTeam()));
         result.put("estimated_total_seconds_at_current_control", selected.time * count
             / 60f / rtsProductionSpeedMultiplier(controlledTeam()));
+        if (rallyX != null) result.put("rally", Map.of("x", rallyX, "y", rallyY, "radius", rallyRadius));
+        if (!squadId.isEmpty()) result.put("squad_id", squadId);
         result.put("mechanic", "one unit is created per standard plan time; this factory queue runs independently of belts and power in stockpile RTS mode");
         return result;
     }
@@ -4468,6 +4530,21 @@ public final class MindustryAgentPlugin extends Plugin {
             Unit unit = selected.unit.create(order.team);
             unit.set(factory.x, factory.y + factory.block.size * Vars.tilesize / 2f + 6f);
             unit.add();
+            if (order.rallyX != null) {
+                Tile rallyTile = Vars.world.tile(order.rallyX, order.rallyY);
+                CoreBuild core = order.team.core();
+                if (rallyTile != null && core != null) {
+                    issueRtsUnitOrder(unit, "rally", null, rallyTile.worldx(), rallyTile.worldy(), core, 14);
+                }
+            }
+            if (!order.squadId.isEmpty()) {
+                RtsSquad squad = teamAgentState(order.team).squads.get(order.squadId);
+                if (squad != null && "rally".equals(squad.mode)) {
+                    squad.unitIds.add(unit.id);
+                    squad.assignedMemberCount = squad.unitIds.size();
+                    squad.nextUpdateTick = Vars.state.tick;
+                }
+            }
             order.completed++;
             order.remaining--;
             if (order.remaining <= 0) {
@@ -4495,6 +4572,9 @@ public final class MindustryAgentPlugin extends Plugin {
             row.put("remaining", order.remaining);
             row.put("status", order.status);
             row.put("total_cost_paid", order.totalCost);
+            if (order.rallyX != null) row.put("rally", Map.of(
+                "x", order.rallyX, "y", order.rallyY, "radius", order.rallyRadius));
+            if (!order.squadId.isEmpty()) row.put("squad_id", order.squadId);
             double multiplier = rtsProductionSpeedMultiplier(team);
             row.put("standard_seconds_per_unit", order.ticksPerUnit / 60d);
             row.put("current_control_point_speed_multiplier", multiplier);
@@ -4924,7 +5004,8 @@ public final class MindustryAgentPlugin extends Plugin {
                     Unit unit = findOwnedCommandableUnit(team, id);
                     if (unit == null) continue;
                     float dx = unit.x - targetWorldX, dy = unit.y - targetWorldY;
-                    if ("rally".equals(squad.mode) && dx * dx + dy * dy <= 2.25f * Vars.tilesize * Vars.tilesize) {
+                    float rallyRadiusWorld = Math.max(1.5f, squad.targetRadius) * Vars.tilesize;
+                    if ("rally".equals(squad.mode) && dx * dx + dy * dy <= rallyRadiusWorld * rallyRadiusWorld) {
                         unit.command().clearCommands();
                         continue;
                     }
@@ -5003,6 +5084,10 @@ public final class MindustryAgentPlugin extends Plugin {
             squad.lastAverageDistanceTiles = averageDistance;
             boolean stalled = !livingUnits.isEmpty() && arrived < livingUnits.size() && engaging == 0
                 && Vars.state.tick - squad.lastProgressTick >= 300d;
+            int pendingTrainingUnits = pendingRtsTrainingUnits(team, squad.id);
+            boolean productionComplete = pendingTrainingUnits == 0;
+            boolean readyForNewOrder = "rally".equals(squad.mode) && productionComplete
+                && !livingUnits.isEmpty() && arrived == livingUnits.size();
             String executionStatus;
             if (livingUnits.isEmpty()) executionStatus = "no_surviving_members";
             else if (engaging > 0) executionStatus = "engaging";
@@ -5014,6 +5099,19 @@ public final class MindustryAgentPlugin extends Plugin {
                     default -> "holding_target_area";
                 };
             } else executionStatus = "moving_to_target";
+            String operationPhase;
+            if (stalled) operationPhase = "stalled";
+            else if (engaging > 0) operationPhase = "engaging";
+            else if ("rally".equals(squad.mode)) {
+                if (pendingTrainingUnits > 0 && livingUnits.isEmpty()) operationPhase = "producing";
+                else if (readyForNewOrder) operationPhase = "ready";
+                else operationPhase = "assembling";
+            } else if ("attack".equals(squad.mode) || "attack_move".equals(squad.mode)) {
+                operationPhase = arrived == livingUnits.size() && !livingUnits.isEmpty() ? "at_objective" : "advancing";
+            } else if ("retreat".equals(squad.mode)) {
+                operationPhase = arrived == livingUnits.size() && !livingUnits.isEmpty() ? "regrouped" : "withdrawing";
+            } else if ("defend".equals(squad.mode)) operationPhase = "holding";
+            else operationPhase = "idle";
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("squad_id", squad.id);
             row.put("mode", squad.mode);
@@ -5025,6 +5123,10 @@ public final class MindustryAgentPlugin extends Plugin {
             row.put("engagement_radius", squad.engagementRadius);
             row.put("assigned_seconds_ago", Math.max(0d, Vars.state.tick - squad.assignedTick) / 60d);
             row.put("execution_status", executionStatus);
+            row.put("operation_phase", operationPhase);
+            row.put("pending_training_units", pendingTrainingUnits);
+            row.put("production_complete", productionComplete);
+            row.put("ready_for_new_order", readyForNewOrder);
             row.put("assigned_member_count", squad.assignedMemberCount);
             row.put("losses_since_order", Math.max(0, squad.assignedMemberCount - living.size()));
             row.put("arrived_count", arrived);
@@ -5041,6 +5143,16 @@ public final class MindustryAgentPlugin extends Plugin {
             result.add(row);
         }
         return result;
+    }
+
+    private int pendingRtsTrainingUnits(Team team, String squadId) {
+        int pending = 0;
+        for (RtsTrainingOrder order : rtsTrainingOrders) {
+            if (order.team == team && order.squadId.equals(squadId) && "training".equals(order.status)) {
+                pending += order.remaining;
+            }
+        }
+        return pending;
     }
 
     private double distance2f(double x1, double y1, double x2, double y2) {
@@ -6127,6 +6239,10 @@ public final class MindustryAgentPlugin extends Plugin {
         private final int requested;
         private final double ticksPerUnit;
         private final Map<String, Integer> totalCost;
+        private final Integer rallyX;
+        private final Integer rallyY;
+        private final int rallyRadius;
+        private final String squadId;
         private int completed;
         private int remaining;
         private double nextCompletionTick;
@@ -6135,7 +6251,8 @@ public final class MindustryAgentPlugin extends Plugin {
 
         private RtsTrainingOrder(Team team, int factoryX, int factoryY, String unitName,
                                  int requested, double ticksPerUnit, double nextCompletionTick,
-                                 double lastSpeedUpdateTick, Map<String, Integer> totalCost) {
+                                 double lastSpeedUpdateTick, Map<String, Integer> totalCost,
+                                 Integer rallyX, Integer rallyY, int rallyRadius, String squadId) {
             this.team = team;
             this.factoryX = factoryX;
             this.factoryY = factoryY;
@@ -6146,6 +6263,10 @@ public final class MindustryAgentPlugin extends Plugin {
             this.nextCompletionTick = nextCompletionTick;
             this.lastSpeedUpdateTick = lastSpeedUpdateTick;
             this.totalCost = totalCost;
+            this.rallyX = rallyX;
+            this.rallyY = rallyY;
+            this.rallyRadius = rallyRadius;
+            this.squadId = squadId;
         }
     }
 

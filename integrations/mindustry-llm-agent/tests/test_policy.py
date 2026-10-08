@@ -354,12 +354,28 @@ class PolicyTest(unittest.TestCase):
             "actions": [{
                 "type": "train_units", "x": 20, "y": 30,
                 "unit": "dagger", "count": 12,
+                "rally_x": 35, "rally_y": 30,
+                "rally_radius": 5, "squad_id": "north_alpha",
             }]
         })["actions"][0]
         self.assertEqual(result, {
             "type": "train_units", "x": 20, "y": 30,
             "unit": "dagger", "count": 12,
+            "rally_x": 35, "rally_y": 30,
+            "rally_radius": 5, "squad_id": "north_alpha",
         })
+
+    def test_training_squad_requires_complete_rally(self) -> None:
+        with self.assertRaises(DecisionError):
+            validate_decision({"actions": [{
+                "type": "train_units", "x": 20, "y": 30,
+                "unit": "dagger", "count": 2, "squad_id": "alpha",
+            }]})
+        with self.assertRaises(DecisionError):
+            validate_decision({"actions": [{
+                "type": "train_units", "x": 20, "y": 30,
+                "unit": "dagger", "count": 2, "rally_x": 35,
+            }]})
 
     def test_normalizes_stockpile_rts_upgrade_order(self) -> None:
         result = validate_decision({

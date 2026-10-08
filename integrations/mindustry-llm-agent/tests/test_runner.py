@@ -140,6 +140,32 @@ class RunnerTimingTest(unittest.TestCase):
             ["no_matching_commandable_units_in_observed_state"],
         )
 
+    def test_rts_preflight_preserves_matching_training_rally_and_rejects_conflict(self) -> None:
+        state = {
+            "game_mode_variant": {"id": "stockpile_rts_pvp"},
+            "offensive_production": {"factories": [{"existing_instances": [{
+                "x": 10, "y": 20, "available_for_new_order": True,
+            }]}], "reconstructors": []},
+            "rts_squads": [{
+                "squad_id": "alpha", "mode": "rally", "member_count": 2,
+                "target": {"x": 30, "y": 40},
+            }],
+            "friendly_units": [],
+        }
+        actions = [
+            {
+                "type": "train_units", "x": 10, "y": 20, "unit": "dagger", "count": 2,
+                "rally_x": 30, "rally_y": 40, "rally_radius": 4, "squad_id": "alpha",
+            },
+            {
+                "type": "train_units", "x": 10, "y": 20, "unit": "dagger", "count": 2,
+                "rally_x": 31, "rally_y": 40, "rally_radius": 4, "squad_id": "alpha",
+            },
+        ]
+        executable, skipped = preflight_rts_queue_actions(state, actions)
+        self.assertEqual(executable, [actions[0]])
+        self.assertEqual(skipped[0]["reason"], "training_squad_not_rally_compatible")
+
 
 if __name__ == "__main__":
     unittest.main()

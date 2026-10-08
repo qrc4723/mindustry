@@ -18,8 +18,16 @@ class RtsPluginContractTest(unittest.TestCase):
         self.assertIn("RTS_CONTROL_REPAIR_MAX_HEALTH_PER_SECOND = 0.01d", self.source)
         self.assertIn("rtsProductionSpeedMultiplier", self.source)
         self.assertIn("unit.heal", self.source)
+        self.assertIn("activeRtsControlPointCount", self.source)
+        self.assertIn("Math.min(1.5d", self.source)
         self.assertNotIn('gameEndReason = "all_three_control_points_', self.source)
         self.assertNotIn("income_items", self.source)
+
+    def test_training_can_stage_units_in_persistent_squads(self) -> None:
+        self.assertIn('"training_squad_requires_rally"', self.source)
+        self.assertIn("order.squadId", self.source)
+        self.assertIn('row.put("operation_phase", operationPhase)', self.source)
+        self.assertIn('row.put("ready_for_new_order", readyForNewOrder)', self.source)
 
     def test_showcase_uses_tactical_terrain_v2(self) -> None:
         self.assertIn("symmetric_three_lane_tactical_showcase_v2", self.source)
