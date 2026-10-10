@@ -12,6 +12,7 @@ from uuid import uuid4
 
 from .config import AgentConfig
 from .http_client import HttpJsonError, MindustryClient
+from .intelligence import StrategicIntelligenceTracker
 from .learning import (
     ActionFailureTracker, InfrastructureBacklog, StateEventTracker,
     compact_action_outcome, defense_outcomes_for_prompt, events_for_prompt,
@@ -372,6 +373,7 @@ def run(config: AgentConfig, *, once: bool, dry_run: bool, max_turns: int | None
     event_tracker = StateEventTracker()
     infrastructure_backlog = InfrastructureBacklog()
     action_failures = ActionFailureTracker()
+    intelligence_tracker = StrategicIntelligenceTracker()
     event_history: list[dict[str, Any]] = []
     strategic_context: dict[str, Any] = {}
 
@@ -400,11 +402,12 @@ def run(config: AgentConfig, *, once: bool, dry_run: bool, max_turns: int | None
             time.sleep(2)
             continue
 
-        observed_events = event_tracker.observe(state)
+        model_state = intelligence_tracker.observe(state)
+        observed_events = event_tracker.observe(model_state)
         infrastructure_backlog.update(observed_events, state.get("wave"))
         event_history.extend(observed_events)
         event_history = event_history[-80:]
-        decision_state = dict(state)
+        decision_state = dict(model_state)
         decision_state["infrastructure_backlog"] = infrastructure_backlog.for_prompt()
         decision_state["recent_defense_outcomes"] = defense_outcomes_for_prompt(event_history)
         try:
@@ -532,6 +535,8 @@ def run(config: AgentConfig, *, once: bool, dry_run: bool, max_turns: int | None
             "turn": turns,
             "episode_id": episode_id,
             "state": state,
+            "strategic_intelligence": model_state.get("strategic_intelligence"),
+            "model_visible_enemy_units": model_state.get("enemy_units", []),
             "observed_events": observed_events,
             "infrastructure_backlog": infrastructure_backlog.for_prompt(),
             "recent_defense_outcomes": defense_outcomes_for_prompt(event_history),

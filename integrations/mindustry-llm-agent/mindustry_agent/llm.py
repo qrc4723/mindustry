@@ -165,6 +165,10 @@ Stockpile RTS strategic frame (causal guidance, never a build order):
 - Response latency and combat adaptation are part of performance. Use current friendly/enemy units, queue timing,
   losses, distances, target health, factory survival, and remaining stockpile to make each decision. In this mode the
   runner refreshes state 0.5 seconds after every response; requested wait_seconds does not delay the next observation.
+- strategic_intelligence defines episode-local fog of war. enemy_units and enemy_teams[].buildings contain only
+  contacts currently inside friendly vision. last_known_enemy_units and last_known_enemy_buildings are stale evidence:
+  use seconds_since_seen, scout again before relying on exact position, and do not treat absence of a visible contact
+  as proof that an area is safe. Enemy-core coordinates and health are public victory-scoreboard information.
 - core_defender is a symmetric automatic core unit, not a normal squad member. If destroyed, its reported respawn
   countdown must finish before it returns; do not assume repeated immediate defenders or spend command_units on it.
 - Use receding-horizon control. The current strategic objective must describe the next observable outcome that can

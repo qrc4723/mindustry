@@ -1379,7 +1379,7 @@ def compact_state(state: dict[str, Any]) -> dict[str, Any]:
             "map", "rules", "game_mode_variant", "pvp_fairness", "core", "cores", "core_defender", "defense_supply", "wave_forecast", "threat_summary", "enemy_spawns",
             "rts_construction_queue", "rts_training_queues", "rts_upgrade_queues",
             "rts_battlefield", "rts_control_points", "rts_control_benefits", "rts_squads", "recent_unit_command_receipts",
-            "recent_combat_losses",
+            "recent_combat_losses", "strategic_intelligence",
             "power_networks", "power_node_topology", "action_contract", "infrastructure_backlog", "recent_defense_outcomes",
         )
     }
