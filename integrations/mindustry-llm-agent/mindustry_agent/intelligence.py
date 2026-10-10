@@ -34,6 +34,7 @@ class StrategicIntelligenceTracker:
         self._unit_tracks: dict[tuple[str, int], dict[str, Any]] = {}
         self._building_tracks: dict[tuple[str, str, int, int], dict[str, Any]] = {}
         self._observed_enemy_losses: dict[tuple[str, int], dict[str, Any]] = {}
+        self._observed_enemy_combat: dict[tuple[str, int], dict[str, Any]] = {}
 
     @staticmethod
     def applies(state: dict[str, Any]) -> bool:
@@ -113,6 +114,9 @@ class StrategicIntelligenceTracker:
             defense["current_enemy_comparison"] = self._visible_force_summary(visible_units)
         observed["recent_combat_losses"] = self._filter_losses(
             state.get("recent_combat_losses"), self_name, sources, tick
+        )
+        observed["recent_unit_combat"] = self._filter_combat(
+            state.get("recent_unit_combat"), self_name, sources, tick
         )
         observed["strategic_intelligence"] = self._intelligence_state(
             state, sources, visible_units, tick
@@ -280,3 +284,68 @@ class StrategicIntelligenceTracker:
             "last_known_enemy_buildings": stale_buildings[:80],
             "public_enemy_core_landmarks": landmarks,
         }
+
+    def _filter_combat(
+        self, raw: Any, self_name: str, sources: list[tuple[float, float, float]], tick: float,
+    ) -> dict[str, Any]:
+        combat = raw if isinstance(raw, dict) else {}
+        opponents = combat.get("opponents") if isinstance(combat.get("opponents"), list) else []
+        for opponent in opponents:
+            if not isinstance(opponent, dict):
+                continue
+            team = str(opponent.get("team", "enemy"))
+            for event in opponent.get("recent_events", []):
+                if not isinstance(event, dict) or not self._is_visible(event, sources):
+                    continue
+                event_id = event.get("event_id")
+                if not isinstance(event_id, int):
+                    continue
+                tracked = deepcopy(event)
+                tracked["_event_tick"] = tick - float(event.get("seconds_ago", 0) or 0) * 60.0
+                self._observed_enemy_combat[(team, event_id)] = tracked
+
+        recent: list[dict[str, Any]] = []
+        for key, tracked in list(self._observed_enemy_combat.items()):
+            age = max(0.0, tick - float(tracked.get("_event_tick", tick))) / 60.0
+            if age > 30.0:
+                del self._observed_enemy_combat[key]
+                continue
+            event = {name: value for name, value in tracked.items() if name != "_event_tick"}
+            event["seconds_ago"] = round(age, 1)
+            recent.append(event)
+        return {
+            "meaning": (
+                "Own combat output is authoritative. Opponent output contains only witnessed bullet-hit events. "
+                "raw_damage is before target armor and shields and is not a matchup recommendation."
+            ),
+            "self": deepcopy(combat.get("self", {"team": self_name})),
+            "observed_opponents": {
+                "last_10_seconds": self._combat_aggregate(
+                    [event for event in recent if float(event.get("seconds_ago", 0) or 0) <= 10.0]
+                ),
+                "last_30_seconds": self._combat_aggregate(recent),
+                "recent_events": recent[-120:],
+            },
+        }
+
+    @staticmethod
+    def _combat_aggregate(events: list[dict[str, Any]]) -> dict[str, Any]:
+        by_type: dict[str, dict[str, Any]] = {}
+        total = 0.0
+        for event in events:
+            damage = float(event.get("raw_damage", 0) or 0)
+            total += damage
+            unit = str(event.get("attacker_unit", "unknown"))
+            row = by_type.setdefault(unit, {
+                "unit": unit, "hits": 0, "raw_damage": 0.0,
+                "unit_target_raw_damage": 0.0, "building_target_raw_damage": 0.0,
+                "targets_by_type": {},
+            })
+            row["hits"] += 1
+            row["raw_damage"] += damage
+            damage_key = f"{event.get('target_kind', 'unit')}_target_raw_damage"
+            if damage_key in row:
+                row[damage_key] += damage
+            target_type = str(event.get("target_type", "unknown"))
+            row["targets_by_type"][target_type] = row["targets_by_type"].get(target_type, 0) + 1
+        return {"hits": len(events), "raw_damage": total, "by_attacker_unit": list(by_type.values())}

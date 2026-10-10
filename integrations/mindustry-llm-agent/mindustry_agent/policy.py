@@ -725,18 +725,43 @@ def _compact_unit_stats(stats: Any) -> dict[str, Any]:
             "has_splash": any(float(weapon.get("splash_damage", 0) or 0) > 0 for weapon in weapons),
             "has_homing": any(bool(weapon.get("homing")) for weapon in weapons),
             "has_armor_piercing": any(bool(weapon.get("armor_piercing")) for weapon in weapons),
+            "maximum_direct_damage_per_hit": max(
+                (float(weapon.get("direct_damage", 0) or 0) for weapon in weapons), default=0.0,
+            ),
+            "maximum_splash_radius_tiles": max(
+                (float(weapon.get("splash_radius_tiles", 0) or 0) for weapon in weapons), default=0.0,
+            ),
             "best_building_damage_multiplier": max(
                 (float(weapon.get("building_damage_multiplier", 1) or 1) for weapon in weapons),
                 default=1.0,
             ),
         }
+    traits = result.get("weapon_traits", {})
+    capability_tags: list[str] = []
+    movement = str(result.get("movement", ""))
+    if movement == "air": capability_tags.append("air_mobility")
+    elif movement == "hover": capability_tags.append("hover_mobility")
+    elif movement == "ground": capability_tags.append("ground_mobility")
+    if result.get("targets_air"): capability_tags.append("can_target_air")
+    if result.get("targets_ground"): capability_tags.append("can_target_ground")
+    if traits.get("has_splash"): capability_tags.append("splash_damage")
+    if traits.get("has_homing"): capability_tags.append("homing_weapons")
+    if traits.get("has_armor_piercing"): capability_tags.append("armor_piercing")
+    if float(traits.get("best_building_damage_multiplier", 1) or 1) > 1:
+        capability_tags.append("bonus_building_damage")
+    if result.get("can_heal"): capability_tags.append("healing_support")
+    if float(result.get("build_speed", 0) or 0) > 0: capability_tags.append("construction_support")
+    if (float(result.get("mine_speed", 0) or 0) > 0
+            and isinstance(result.get("mine_tier"), (int, float)) and result["mine_tier"] >= 0):
+        capability_tags.append("mining_support")
+    result["capability_tags"] = capability_tags
     return result
 
 
 def _unit_catalog_table(catalog: dict[str, dict[str, Any]]) -> dict[str, Any]:
     stat_columns = [
         "unit", "health", "armor", "speed_tiles_per_second", "range_tiles", "estimated_dps",
-        "movement", "targets_air", "targets_ground", "weapon_traits",
+        "movement", "targets_air", "targets_ground", "capability_tags", "weapon_traits",
     ]
     rows: list[list[Any]] = []
     for name in sorted(catalog):
@@ -746,7 +771,10 @@ def _unit_catalog_table(catalog: dict[str, dict[str, Any]]) -> dict[str, Any]:
             *[stats.get(column) for column in stat_columns[1:]],
         ])
     return {
-        "meaning": "Authoritative compact unit comparison table; decode rows with stat_columns.",
+        "meaning": (
+            "Authoritative compact unit comparison table; decode rows with stat_columns. capability_tags are "
+            "factual movement, targeting, weapon, and support properties, not matchup scores or recommendations."
+        ),
         "stat_columns": stat_columns,
         "rows": rows,
     }
@@ -1379,7 +1407,7 @@ def compact_state(state: dict[str, Any]) -> dict[str, Any]:
             "map", "rules", "game_mode_variant", "pvp_fairness", "core", "cores", "core_defender", "defense_supply", "wave_forecast", "threat_summary", "enemy_spawns",
             "rts_construction_queue", "rts_training_queues", "rts_upgrade_queues",
             "rts_battlefield", "rts_control_points", "rts_control_benefits", "rts_squads", "recent_unit_command_receipts",
-            "recent_combat_losses", "strategic_intelligence",
+            "recent_combat_losses", "recent_unit_combat", "strategic_intelligence",
             "power_networks", "power_node_topology", "action_contract", "infrastructure_backlog", "recent_defense_outcomes",
         )
     }

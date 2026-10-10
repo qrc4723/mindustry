@@ -537,6 +537,7 @@ def run(config: AgentConfig, *, once: bool, dry_run: bool, max_turns: int | None
             "state": state,
             "strategic_intelligence": model_state.get("strategic_intelligence"),
             "model_visible_enemy_units": model_state.get("enemy_units", []),
+            "model_recent_unit_combat": model_state.get("recent_unit_combat"),
             "observed_events": observed_events,
             "infrastructure_backlog": infrastructure_backlog.for_prompt(),
             "recent_defense_outcomes": defense_outcomes_for_prompt(event_history),

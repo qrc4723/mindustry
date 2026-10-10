@@ -33,6 +33,10 @@ def rts_state(tick: int, enemy_x: float, *, enemy_building_x: int = 70) -> dict:
             "self": {"team": "sharded", "total_this_match": 2},
             "opponents": [],
         },
+        "recent_unit_combat": {
+            "self": {"team": "sharded", "last_30_seconds": {"hits": 0}},
+            "opponents": [],
+        },
     }
 
 
@@ -90,6 +94,26 @@ class StrategicIntelligenceTrackerTest(unittest.TestCase):
         losses = tracker.observe(state)["recent_combat_losses"]
         self.assertEqual(losses["observed_opponents"]["last_30_seconds"], 1)
         self.assertNotIn("total_this_match", losses["observed_opponents"])
+
+    def test_only_witnessed_enemy_combat_is_aggregated(self) -> None:
+        tracker = StrategicIntelligenceTracker()
+        state = rts_state(600, 45)
+        state["recent_unit_combat"]["opponents"] = [{
+            "team": "crux",
+            "recent_events": [
+                {"event_id": 1, "seconds_ago": 2, "attacker_unit": "dagger",
+                 "target_kind": "unit", "target_type": "crawler", "raw_damage": 20,
+                 "x": 45, "y": 10},
+                {"event_id": 2, "seconds_ago": 2, "attacker_unit": "dagger",
+                 "target_kind": "building", "target_type": "duo", "raw_damage": 50,
+                 "x": 80, "y": 10},
+            ],
+        }]
+        combat = tracker.observe(state)["recent_unit_combat"]["observed_opponents"]
+        self.assertEqual(combat["last_30_seconds"]["hits"], 1)
+        row = combat["last_30_seconds"]["by_attacker_unit"][0]
+        self.assertEqual(row["unit_target_raw_damage"], 20)
+        self.assertEqual(row["building_target_raw_damage"], 0)
 
 
 if __name__ == "__main__":

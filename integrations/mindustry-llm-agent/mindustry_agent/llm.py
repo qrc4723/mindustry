@@ -169,6 +169,10 @@ Stockpile RTS strategic frame (causal guidance, never a build order):
   contacts currently inside friendly vision. last_known_enemy_units and last_known_enemy_buildings are stale evidence:
   use seconds_since_seen, scout again before relying on exact position, and do not treat absence of a visible contact
   as proof that an area is safe. Enemy-core coordinates and health are public victory-scoreboard information.
+- unit_catalog capability_tags describe factual movement, targeting, weapon effects, structure-damage multipliers,
+  and support capabilities; they are not counter scores. recent_unit_combat reports actual recent bullet-hit output
+  by attacker and target type. raw_damage is measured before target armor and shields, so interpret it together with
+  observed losses, surviving health, target armor, range, speed, and production cost rather than as an automatic rank.
 - core_defender is a symmetric automatic core unit, not a normal squad member. If destroyed, its reported respawn
   countdown must finish before it returns; do not assume repeated immediate defenders or spend command_units on it.
 - Use receding-horizon control. The current strategic objective must describe the next observable outcome that can

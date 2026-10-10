@@ -1,9 +1,19 @@
 import unittest
 
-from mindustry_agent.policy import DecisionError, compact_state, extract_json_object, validate_decision
+from mindustry_agent.policy import (
+    DecisionError, _compact_unit_stats, compact_state, extract_json_object, validate_decision,
+)
 
 
 class PolicyTest(unittest.TestCase):
+    def test_capability_tags_require_real_mining_tier(self) -> None:
+        combat = _compact_unit_stats({
+            "movement": "ground", "targets_ground": True,
+            "mine_speed": 1.0, "mine_tier": -1, "weapons": [],
+        })
+        self.assertIn("ground_mobility", combat["capability_tags"])
+        self.assertNotIn("mining_support", combat["capability_tags"])
+
     def test_keeps_rts_battlefield_lane_facts(self) -> None:
         battlefield = {
             "style": "symmetric_three_lane_showcase",
@@ -658,6 +668,7 @@ class PolicyTest(unittest.TestCase):
         }
         self.assertEqual(unit_rows["mace"]["estimated_dps"], 42.0)
         self.assertEqual(unit_rows["dagger"]["weapon_traits"]["mounts"], 2)
+        self.assertIn("capability_tags", unit_rows["dagger"])
 
     def test_stockpile_rts_exposes_unranked_turret_wall_and_ammo_facts(self) -> None:
         state = {

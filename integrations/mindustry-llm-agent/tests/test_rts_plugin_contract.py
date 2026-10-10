@@ -3,6 +3,12 @@ from pathlib import Path
 
 
 class RtsPluginContractTest(unittest.TestCase):
+    def test_recent_unit_combat_tracks_unit_and_building_hits(self) -> None:
+        self.assertIn("Events.on(UnitDamageEvent.class", self.source)
+        self.assertIn("Events.on(BuildDamageEvent.class", self.source)
+        self.assertIn('root.put("recent_unit_combat"', self.source)
+        self.assertIn('"raw_damage"', self.source)
+
     @classmethod
     def setUpClass(cls) -> None:
         root = Path(__file__).resolve().parents[1]
