@@ -508,13 +508,22 @@ class PolicyTest(unittest.TestCase):
                 {"id": "south_advanced", "owner": "neutral"},
             ],
             "rts_control_benefits": {
-                "production_and_upgrade_speed_bonus_per_owned_point_fraction": 0.1,
-                "friendly_unit_repair_max_health_fraction_per_second_in_owned_radius": 0.01,
+                "north_unit_training_and_upgrade_speed_bonus_fraction": 0.1,
+                "center_operational_intelligence_active": False,
+                "south_friendly_unit_repair_max_health_fraction_per_second_in_radius": 0.01,
+                "south_friendly_structure_repair_max_health_fraction_per_second_in_radius": 0.005,
+                "takeover_requires_neutralization": True,
+                "neutral_lock_seconds_after_enemy_neutralization": 5.0,
                 "current_production_and_upgrade_speed_multiplier": 1.1,
                 "teams": {
                     "sharded": {"owned_points": 1, "production_and_upgrade_speed_multiplier": 1.1},
-                    "crux": {"owned_points": 1, "production_and_upgrade_speed_multiplier": 1.1},
+                    "crux": {"owned_points": 1, "production_and_upgrade_speed_multiplier": 1.0},
                 },
+            },
+            "rts_tactical_intelligence": {
+                "basic_battlefield_positions_are_always_complete": True,
+                "center_operational_intelligence_active": False,
+                "opponent_operational_intelligence": [],
             },
             "core": {"items": {"lead": 100, "silicon": 80}},
             "buildings": [{
@@ -602,8 +611,13 @@ class PolicyTest(unittest.TestCase):
         self.assertEqual(benefits["most_owned_by_one_opponent"], 1)
         self.assertEqual(benefits["current_production_and_upgrade_speed_multiplier"], 1.1)
         self.assertEqual(
-            benefits["friendly_unit_repair_max_health_fraction_per_second_in_owned_radius"], 0.01
+            benefits["south_friendly_unit_repair_max_health_fraction_per_second_in_radius"], 0.01
         )
+        self.assertEqual(
+            benefits["south_friendly_structure_repair_max_health_fraction_per_second_in_radius"], 0.005
+        )
+        self.assertTrue(benefits["takeover_requires_neutralization"])
+        self.assertTrue(compact["rts_tactical_intelligence"]["basic_battlefield_positions_are_always_complete"])
         self.assertEqual(compact["rts_training_queues"][0]["remaining"], 3)
         self.assertEqual(compact["rts_upgrade_queues"][0]["remaining"], 1)
         self.assertEqual(compact["rts_construction_queue"][0]["status"], "queued")

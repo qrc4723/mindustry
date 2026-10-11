@@ -57,12 +57,15 @@ Stockpile RTS strategic frame (causal guidance, never a build order):
 - Construction and training still expose their actual costs. Decide how to use build time, factory slots, unit
   composition, parallel production, replacements, and battlefield position; those are the intended constraints.
 - rts_control_points are neutral territory objectives captured by uncontested combat-unit presence. They never satisfy
-  the victory condition and provide no resource income. Each owned point gives that team 10% faster unit training and
-  upgrading, stacking to 30%, and heals friendly combat units inside its uncontested radius by 1% of maximum health
-  per second. Both benefits pause while that owned point is contested. Additional friendly occupants accelerate
-  capture only up to 1.5x, so piling every unit onto one point has diminishing capture value. rts_control_benefits
-  reports exact ownership, active benefit points, and current multipliers. Each point also shows its capture
-  radius, owner/progress, and local force presence. Decide which points are
+  the victory condition and provide no resource income. Secure north control gives 10% faster unit training and
+  upgrading. Secure center control adds exact opponent construction/training/upgrade queues and squad orders under
+  rts_tactical_intelligence; basic current unit/building positions remain fully visible to both teams without it.
+  Secure south control repairs friendly combat units by 1% and friendly structures by 0.5% of maximum health per
+  second inside its radius. A benefit is inactive while capture is in progress or contested. Hostile takeover first
+  neutralizes the point, followed by a five-second forced-neutral lock before either team can capture it. Additional
+  friendly occupants accelerate either capture stage only up to 1.5x. Each point reports its benefit, capture phase,
+  neutral-lock time, ownership/progress, and local force presence; rts_control_benefits summarizes currently active
+  team-wide effects. Decide which points are
   worth contesting, how many squads to commit, and whether production tempo, denial, defense, or a core attack has greater
   current value. Convert any territorial advantage into sustainable army pressure and eventual core damage; the
   points are opportunities, not a prescribed opening or capture order.
@@ -71,9 +74,10 @@ Stockpile RTS strategic frame (causal guidance, never a build order):
   direct victory progress. Reassess whether current composition, concentration, route, target selection, or timing can
   create sustainable core pressure; this evidence does not prescribe a specific attack threshold or build order.
 - rts_battlefield describes the current arena. In the open baseline, ground forces can approach directly. In the
-  three-lane showcase, indestructible neutral terrain creates north, center, and south ground crossings around the
-  listed coordinates, with point-reflected staging pockets, objective-side cover, and offset firing lines. Flying
-  units can cross terrain freely. Decide whether to concentrate, split, feint, rotate lanes, defend a choke, contest an
+  three-lane showcase, the north is a wide maneuver corridor with sparse cover and room for large formations; the
+  center is the shortest but narrowest and easiest ground route to fortify; the south is a longer S-shaped rear flank
+  with forced turns. Solid neutral terrain blocks ground passage and direct firing lines, while flying units can use
+  direct air-only shortcuts across it. Decide whether to concentrate, split, feint, rotate lanes, defend a choke, contest an
   advantageous point, or bypass terrain from the current forces and opponent. No lane, force ratio, or opening is preferred.
 - Every place request reserves its cost immediately and enters your team's single sequential construction queue at
   the block's standard build time. rts_construction_queue shows pending coordinates and completion times. A long JSON

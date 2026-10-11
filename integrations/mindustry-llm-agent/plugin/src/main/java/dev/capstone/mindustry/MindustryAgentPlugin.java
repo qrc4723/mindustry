@@ -150,8 +150,10 @@ public final class MindustryAgentPlugin extends Plugin {
     private static final double CORE_DEFENDER_RESPAWN_DELAY_TICKS = 12d * 60d;
     private static final double RTS_CONTROL_CAPTURE_RADIUS_TILES = 11d;
     private static final double RTS_CONTROL_CAPTURE_SECONDS = 12d;
-    private static final double RTS_CONTROL_PRODUCTION_SPEED_BONUS_PER_POINT = 0.10d;
+    private static final double RTS_CONTROL_NEUTRAL_LOCK_SECONDS = 5d;
+    private static final double RTS_CONTROL_NORTH_PRODUCTION_SPEED_BONUS = 0.10d;
     private static final double RTS_CONTROL_REPAIR_MAX_HEALTH_PER_SECOND = 0.01d;
+    private static final double RTS_CONTROL_STRUCTURE_REPAIR_MAX_HEALTH_PER_SECOND = 0.005d;
     private static final int RTS_ABUNDANT_ITEM_AMOUNT = 12000;
     private static final int[][] DIRECTIONS = {{1, 0}, {0, 1}, {-1, 0}, {0, -1}};
 
@@ -659,32 +661,32 @@ public final class MindustryAgentPlugin extends Plugin {
         int sumY = sourceCore.tileY() + targetCore.tileY();
         int centerY = sumY / 2;
         int[] laneCenters = {centerY + 28, centerY, centerY - 28};
+        int[] laneHalfHeights = {10, 4, 7};
         int dividerLeft = (sumX - 3) / 2;
         int dividerRight = sumX - dividerLeft;
-        int openingHalfHeight = 7;
         int neutralWallTiles = 0;
 
-        // Visually separate the three routes and the two deployment zones without changing movement speed.
-        // This makes the strategic topology legible to a human spectator while preserving identical mechanics.
-        for (int laneCenter : laneCenters) {
-            paintFloorRect(0, laneCenter - openingHalfHeight, Vars.world.width() - 1,
-                laneCenter + openingHalfHeight, Blocks.metalFloor);
-            paintFloorRect(dividerLeft - 10, laneCenter - 5, dividerRight + 10,
-                laneCenter + 5, Blocks.darkPanel1);
+        // Each lane has a different readable footprint: a broad northern maneuver space, a narrow
+        // central choke, and a southern route whose approach walls force a longer S-shaped detour.
+        for (int index = 0; index < laneCenters.length; index++) {
+            int laneCenter = laneCenters[index], halfHeight = laneHalfHeights[index];
+            paintFloorRect(0, laneCenter - halfHeight, Vars.world.width() - 1,
+                laneCenter + halfHeight, Blocks.metalFloor);
+            paintFloorRect(dividerLeft - 10, laneCenter - Math.min(5, halfHeight), dividerRight + 10,
+                laneCenter + Math.min(5, halfHeight), Blocks.darkPanel1);
         }
         paintFloorRect(sourceCore.tileX() - 12, sourceCore.tileY() - 15,
             sourceCore.tileX() + 12, sourceCore.tileY() + 15, Blocks.metalFloor2);
         paintFloorRect(targetCore.tileX() - 12, targetCore.tileY() - 15,
             targetCore.tileX() + 12, targetCore.tileY() + 15, Blocks.metalFloor2);
 
-        // A broken central ridge creates three crossings. It is not one continuous visual divider:
-        // the additional point-reflected cover below creates staging pockets, flank screens and
-        // offset firing lines while leaving every lane connected for ground units.
+        // A broken central ridge creates three mechanically different ground crossings. Air units
+        // ignore it and therefore retain separate direct approach choices.
         for (int x = dividerLeft; x <= dividerRight; x++) {
             for (int y = 0; y < Vars.world.height(); y++) {
                 boolean laneOpening = false;
-                for (int laneCenter : laneCenters) {
-                    if (Math.abs(y - laneCenter) <= openingHalfHeight) {
+                for (int index = 0; index < laneCenters.length; index++) {
+                    if (Math.abs(y - laneCenters[index]) <= laneHalfHeights[index]) {
                         laneOpening = true;
                         break;
                     }
@@ -698,49 +700,61 @@ public final class MindustryAgentPlugin extends Plugin {
         }
 
         int tacticalCoverTiles = 0;
-        tacticalCoverTiles += placeSymmetricTerrainRect(46, 24, 52, 30, Blocks.stoneWall, sumX, sumY);
-        tacticalCoverTiles += placeSymmetricTerrainRect(46, 50, 52, 56, Blocks.stoneWall, sumX, sumY);
-        tacticalCoverTiles += placeSymmetricTerrainRect(64, 34, 69, 37, Blocks.stoneWall, sumX, sumY);
-        tacticalCoverTiles += placeSymmetricTerrainRect(69, 61, 74, 64, Blocks.stoneWall, sumX, sumY);
-        tacticalCoverTiles += placeSymmetricTerrainRect(69, 16, 74, 19, Blocks.stoneWall, sumX, sumY);
+        // North: sparse, offset cover and a wide mouth favor movement, spreading and heavy formations.
+        tacticalCoverTiles += placeMirroredXTerrainRect(dividerLeft - 18, laneCenters[0] - 9,
+            dividerLeft - 15, laneCenters[0] - 5, Blocks.stoneWall, sumX);
+        tacticalCoverTiles += placeMirroredXTerrainRect(dividerLeft - 8, laneCenters[0] + 5,
+            dividerLeft - 6, laneCenters[0] + 8, Blocks.stoneWall, sumX);
 
-        // Small cover pillars around (not on) each objective prevent every engagement from becoming
-        // a single unobstructed firing line. The center tile and capture circle remain traversable.
-        for (int laneCenter : laneCenters) {
-            tacticalCoverTiles += placeTerrainRect(dividerLeft - 8, laneCenter - 5,
-                dividerLeft - 6, laneCenter - 2, Blocks.stoneWall);
-            tacticalCoverTiles += placeTerrainRect(dividerRight + 6, laneCenter + 2,
-                dividerRight + 8, laneCenter + 5, Blocks.stoneWall);
-        }
+        // Center: a short but narrow opening with paired firing screens is the easiest route to fortify.
+        tacticalCoverTiles += placeMirroredXTerrainRect(dividerLeft - 12, laneCenters[1] + 5,
+            dividerLeft - 5, laneCenters[1] + 8, Blocks.stoneWall, sumX);
+        tacticalCoverTiles += placeMirroredXTerrainRect(dividerLeft - 12, laneCenters[1] - 8,
+            dividerLeft - 5, laneCenters[1] - 5, Blocks.stoneWall, sumX);
+
+        // South: mirrored approach barriers leave alternating lower/upper gates. Ground forces must
+        // bend around them before and after the objective instead of receiving a direct firing line.
+        tacticalCoverTiles += placeTerrainRect(dividerLeft - 25, laneCenters[2] - 1,
+            dividerLeft - 20, laneCenters[2] + 9, Blocks.stoneWall);
+        tacticalCoverTiles += placeTerrainRect(sumX - (dividerLeft - 20), laneCenters[2] - 9,
+            sumX - (dividerLeft - 25), laneCenters[2] + 1, Blocks.stoneWall);
+        tacticalCoverTiles += placeMirroredXTerrainRect(dividerLeft - 10, laneCenters[2] + 4,
+            dividerLeft - 7, laneCenters[2] + 7, Blocks.stoneWall, sumX);
 
         List<Map<String, Object>> lanes = new ArrayList<>();
         lanes.add(strategicLane(
-            "north_industry", "north", dividerLeft, dividerRight, laneCenters[0], openingHalfHeight,
-            "wide industrial flank with offset cover and room to stage or rotate before the crossing"
+            "north_industry", "north", dividerLeft, dividerRight, laneCenters[0], laneHalfHeights[0],
+            "wide maneuver corridor with sparse cover, generous formation width, and room for mobile or heavy forces",
+            "short_flank", "wide", "preferred_staging_space_for_large_ground_formations"
         ));
         lanes.add(strategicLane(
-            "center_technology", "center", dividerLeft, dividerRight, laneCenters[1], openingHalfHeight,
-            "short direct crossing with staggered central cover; fastest pressure route but exposed to crossfire"
+            "center_technology", "center", dividerLeft, dividerRight, laneCenters[1], laneHalfHeights[1],
+            "shortest direct crossing with a narrow mouth and paired firing screens; easy to fortify or contest",
+            "shortest", "narrow", "ground_choke"
         ));
         lanes.add(strategicLane(
-            "south_advanced", "south", dividerLeft, dividerRight, laneCenters[2], openingHalfHeight,
-            "wide advanced flank with offset cover and a separate approach from the central firing line"
+            "south_advanced", "south", dividerLeft, dividerRight, laneCenters[2], laneHalfHeights[2],
+            "long S-shaped ground detour with alternating approach gates that can reach the opposing rear from outside the central firing line",
+            "longest_detour", "medium_with_forced_turns", "rear_flank_route"
         ));
 
         return Map.ofEntries(
-            Map.entry("style", "symmetric_three_lane_tactical_showcase_v2"),
+            Map.entry("style", "symmetric_three_lane_tactical_showcase_v3"),
             Map.entry("ground_route_choices", 3),
             Map.entry("neutral_divider_x_min", dividerLeft),
             Map.entry("neutral_divider_x_max", dividerRight),
             Map.entry("neutral_wall_tiles", neutralWallTiles),
             Map.entry("tactical_cover_tiles", tacticalCoverTiles),
             Map.entry("wall_behavior", "indestructible neutral terrain that redirects ground units"),
-            Map.entry("air_behavior", "flying units ignore the neutral divider and can cross between lanes"),
+            Map.entry("air_behavior", "flying units ignore the neutral ridge and approach walls, creating direct air-only shortcuts between every lane"),
+            Map.entry("heavy_ground_behavior", "the wide north corridor provides the clearest staging and turning space for large ground formations; it is not a unit-type lock"),
             Map.entry("lanes", lanes),
             Map.entry("tactical_features", List.of(
-                "three visually distinct lane corridors",
-                "point-reflected staging pockets and offset firing lines",
-                "objective-side cover with open capture centers",
+                "wide northern maneuver lane with sparse cover",
+                "short fortified central choke",
+                "long southern S-bend rear approach",
+                "solid terrain that blocks ground passage and direct firing lines",
+                "air-only shortcuts across the neutral ridge",
                 "open home-side rotation space between lanes"
             )),
             Map.entry("strategy_contract", "lane facts are observations, not a preferred opening, force split, or attack order")
@@ -764,6 +778,14 @@ public final class MindustryAgentPlugin extends Plugin {
         return placed;
     }
 
+    private int placeMirroredXTerrainRect(
+        int minX, int minY, int maxX, int maxY, Block block, int sumX
+    ) {
+        int placed = placeTerrainRect(minX, minY, maxX, maxY, block);
+        placed += placeTerrainRect(sumX - maxX, minY, sumX - minX, maxY, block);
+        return placed;
+    }
+
     private int placeTerrainRect(int minX, int minY, int maxX, int maxY, Block block) {
         int placed = 0;
         for (int x = Math.max(0, minX); x <= Math.min(Vars.world.width() - 1, maxX); x++) {
@@ -779,19 +801,24 @@ public final class MindustryAgentPlugin extends Plugin {
 
     private Map<String, Object> strategicLane(
         String id, String mapSide, int dividerLeft, int dividerRight, int centerY,
-        int openingHalfHeight, String characteristic
+        int openingHalfHeight, String characteristic, String routeDistanceClass,
+        String groundAccessProfile, String specialUse
     ) {
-        return Map.of(
-            "id", id,
-            "map_side", mapSide,
-            "objective_id", id,
-            "crossing_x_min", dividerLeft,
-            "crossing_x_max", dividerRight,
-            "crossing_center_y", centerY,
-            "crossing_y_min", centerY - openingHalfHeight,
-            "crossing_y_max", centerY + openingHalfHeight,
-            "ground_characteristic", characteristic,
-            "air_access", "unrestricted"
+        return Map.ofEntries(
+            Map.entry("id", id),
+            Map.entry("map_side", mapSide),
+            Map.entry("objective_id", id),
+            Map.entry("crossing_x_min", dividerLeft),
+            Map.entry("crossing_x_max", dividerRight),
+            Map.entry("crossing_center_y", centerY),
+            Map.entry("crossing_y_min", centerY - openingHalfHeight),
+            Map.entry("crossing_y_max", centerY + openingHalfHeight),
+            Map.entry("crossing_width_tiles", openingHalfHeight * 2 + 1),
+            Map.entry("route_distance_class", routeDistanceClass),
+            Map.entry("ground_access_profile", groundAccessProfile),
+            Map.entry("ground_characteristic", characteristic),
+            Map.entry("special_use", specialUse),
+            Map.entry("air_access", "unrestricted_direct_shortcut")
         );
     }
 
@@ -847,7 +874,7 @@ public final class MindustryAgentPlugin extends Plugin {
         addRtsControlPoint("center_technology", centerX, centerY);
         addRtsControlPoint("south_advanced", centerX - lateralX * 28d, centerY - lateralY * 28d);
         Map<String, Object> enriched = new LinkedHashMap<>(pvpFairness);
-        enriched.put("strategic_control_points", "three neutral symmetric-access objectives; each owned point grants 10% faster unit training and upgrading plus 1% maximum-health repair per second to friendly combat units inside its radius; control points never directly win the match");
+        enriched.put("strategic_control_points", "north grants 10% faster unit training/upgrading, center grants opponent queue and squad-order intelligence, and south repairs friendly combat units and structures inside its radius; benefits require secure uncontested ownership, enemy takeover first neutralizes the point, and control points never directly win the match");
         enriched.put("victory_conditions", List.of("destroy_every_enemy_core"));
         enriched.put("starting_stockpile_is_finite_but_abundant", true);
         pvpFairness = enriched;
@@ -882,6 +909,11 @@ public final class MindustryAgentPlugin extends Plugin {
             point.lastPresence.clear();
             presence.forEach((team, count) -> point.lastPresence.put(team.id, count));
             point.contested = presence.size() > 1;
+            if (Vars.state.tick < point.neutralUntilTick) {
+                point.capturingTeam = null;
+                point.captureProgress = 0d;
+                continue;
+            }
             if (presence.size() != 1) {
                 if (point.owner == null && presence.isEmpty() && point.captureProgress > 0d) {
                     point.captureProgress = Math.max(0d, point.captureProgress - 0.5d / (RTS_CONTROL_CAPTURE_SECONDS * 60d));
@@ -904,23 +936,42 @@ public final class MindustryAgentPlugin extends Plugin {
             point.captureProgress = Math.min(1d,
                 point.captureProgress + strength / (RTS_CONTROL_CAPTURE_SECONDS * 60d));
             if (point.captureProgress >= 1d) {
+                if (point.owner != null) {
+                    Team previousOwner = point.owner;
+                    point.owner = null;
+                    point.capturingTeam = null;
+                    point.captureProgress = 0d;
+                    point.neutralUntilTick = Vars.state.tick + RTS_CONTROL_NEUTRAL_LOCK_SECONDS * 60d;
+                    Log.info("[LLM bridge] @ neutralized RTS control point @ previously owned by @",
+                        team.name, point.id, previousOwner.name);
+                    continue;
+                }
                 point.owner = team;
                 point.capturingTeam = null;
                 point.captureProgress = 0d;
+                point.neutralUntilTick = 0d;
                 point.captures++;
                 Log.info("[LLM bridge] @ captured RTS control point @", team.name, point.id);
             }
         }
         if (elapsedTicks <= 0d) return;
-        double repairFraction = RTS_CONTROL_REPAIR_MAX_HEALTH_PER_SECOND * elapsedTicks / 60d;
-        for (RtsControlPoint point : rtsControlPoints) {
-            if (point.owner == null || point.contested || point.capturingTeam != null) continue;
-            for (Unit unit : point.owner.data().units) {
+        RtsControlPoint south = rtsControlPoint("south_advanced");
+        if (south != null && isRtsControlPointBenefitActive(south)) {
+            double unitRepairFraction = RTS_CONTROL_REPAIR_MAX_HEALTH_PER_SECOND * elapsedTicks / 60d;
+            double structureRepairFraction = RTS_CONTROL_STRUCTURE_REPAIR_MAX_HEALTH_PER_SECOND * elapsedTicks / 60d;
+            for (Unit unit : south.owner.data().units) {
                 if (unit.dead() || !unit.isAdded() || !unit.type.canAttack || !unit.type.hasWeapons()
                     || unit.health >= unit.maxHealth) continue;
-                float dx = unit.x - point.worldX(), dy = unit.y - point.worldY();
+                float dx = unit.x - south.worldX(), dy = unit.y - south.worldY();
                 if (dx * dx + dy * dy <= radiusWorld * radiusWorld) {
-                    unit.heal((float)(unit.maxHealth * repairFraction));
+                    unit.heal((float)(unit.maxHealth * unitRepairFraction));
+                }
+            }
+            for (Building building : south.owner.data().buildings) {
+                if (!building.isAdded() || building.health >= building.maxHealth) continue;
+                float dx = building.x - south.worldX(), dy = building.y - south.worldY();
+                if (dx * dx + dy * dy <= radiusWorld * radiusWorld) {
+                    building.heal((float)(building.maxHealth * structureRepairFraction));
                 }
             }
         }
@@ -939,7 +990,10 @@ public final class MindustryAgentPlugin extends Plugin {
             row.put("capturing_team", point.capturingTeam == null ? null : point.capturingTeam.name);
             row.put("capture_progress", point.captureProgress);
             row.put("contested", point.contested);
-            row.put("benefit_active", point.owner != null && !point.contested && point.capturingTeam == null);
+            row.put("benefit_active", isRtsControlPointBenefitActive(point));
+            row.put("capture_phase", rtsControlPointCapturePhase(point));
+            row.put("neutral_lock_seconds_remaining", Math.max(0d,
+                point.neutralUntilTick - Vars.state.tick) / 60d);
             int capturingPresence = point.capturingTeam == null
                 ? 0 : point.lastPresence.getOrDefault(point.capturingTeam.id, 0);
             row.put("capture_speed_multiplier", capturingPresence > 0
@@ -951,9 +1005,25 @@ public final class MindustryAgentPlugin extends Plugin {
             row.put("combat_unit_presence", presence);
             row.put("captures", point.captures);
             row.put("direct_victory_effect", false);
-            row.put("production_and_upgrade_speed_bonus_fraction", RTS_CONTROL_PRODUCTION_SPEED_BONUS_PER_POINT);
-            row.put("friendly_unit_repair_max_health_fraction_per_second_in_radius",
-                RTS_CONTROL_REPAIR_MAX_HEALTH_PER_SECOND);
+            Map<String, Object> benefit = new LinkedHashMap<>();
+            if ("north_industry".equals(point.id)) {
+                benefit.put("type", "unit_production_speed");
+                benefit.put("training_and_upgrade_speed_bonus_fraction",
+                    RTS_CONTROL_NORTH_PRODUCTION_SPEED_BONUS);
+            } else if ("center_technology".equals(point.id)) {
+                benefit.put("type", "operational_intelligence");
+                benefit.put("reveals", List.of(
+                    "opponent_construction_queue", "opponent_training_queue",
+                    "opponent_upgrade_queue", "opponent_squad_orders"));
+                benefit.put("basic_full_battlefield_positions_remain_public", true);
+            } else {
+                benefit.put("type", "field_repair");
+                benefit.put("friendly_unit_max_health_fraction_per_second_in_radius",
+                    RTS_CONTROL_REPAIR_MAX_HEALTH_PER_SECOND);
+                benefit.put("friendly_structure_max_health_fraction_per_second_in_radius",
+                    RTS_CONTROL_STRUCTURE_REPAIR_MAX_HEALTH_PER_SECOND);
+            }
+            row.put("benefit", benefit);
             CoreBuild ownCore = observer.core();
             row.put("distance_from_own_core_tiles", ownCore == null ? null : Math.sqrt(
                 distance2(point.x, point.y, ownCore.tileX(), ownCore.tileY())));
@@ -967,22 +1037,29 @@ public final class MindustryAgentPlugin extends Plugin {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("direct_victory_effect", false);
         result.put("victory_condition", "destroy_every_enemy_core");
-        result.put("production_and_upgrade_speed_bonus_per_owned_point_fraction",
-            RTS_CONTROL_PRODUCTION_SPEED_BONUS_PER_POINT);
-        result.put("maximum_production_and_upgrade_speed_bonus_fraction",
-            RTS_CONTROL_PRODUCTION_SPEED_BONUS_PER_POINT * rtsControlPoints.size());
-        result.put("friendly_unit_repair_max_health_fraction_per_second_in_owned_radius",
+        result.put("north_unit_training_and_upgrade_speed_bonus_fraction",
+            RTS_CONTROL_NORTH_PRODUCTION_SPEED_BONUS);
+        result.put("center_operational_intelligence_active",
+            hasActiveRtsControlPoint(observer, "center_technology"));
+        result.put("south_friendly_unit_repair_max_health_fraction_per_second_in_radius",
             RTS_CONTROL_REPAIR_MAX_HEALTH_PER_SECOND);
+        result.put("south_friendly_structure_repair_max_health_fraction_per_second_in_radius",
+            RTS_CONTROL_STRUCTURE_REPAIR_MAX_HEALTH_PER_SECOND);
         result.put("owned_points", ownedRtsControlPointCount(observer));
         result.put("active_benefit_points", activeRtsControlPointCount(observer));
         result.put("contested_owned_points_suspend_benefits", true);
+        result.put("takeover_requires_neutralization", true);
+        result.put("neutral_lock_seconds_after_enemy_neutralization", RTS_CONTROL_NEUTRAL_LOCK_SECONDS);
         result.put("current_production_and_upgrade_speed_multiplier", rtsProductionSpeedMultiplier(observer));
         Map<String, Object> teams = new LinkedHashMap<>();
         for (Team team : configuredAgentTeams()) {
-            teams.put(team.name, Map.of(
-                "owned_points", ownedRtsControlPointCount(team),
-                "active_benefit_points", activeRtsControlPointCount(team),
-                "production_and_upgrade_speed_multiplier", rtsProductionSpeedMultiplier(team)
+            teams.put(team.name, Map.ofEntries(
+                Map.entry("owned_points", ownedRtsControlPointCount(team)),
+                Map.entry("active_benefit_points", activeRtsControlPointCount(team)),
+                Map.entry("north_production_active", hasActiveRtsControlPoint(team, "north_industry")),
+                Map.entry("center_intelligence_active", hasActiveRtsControlPoint(team, "center_technology")),
+                Map.entry("south_repair_active", hasActiveRtsControlPoint(team, "south_advanced")),
+                Map.entry("production_and_upgrade_speed_multiplier", rtsProductionSpeedMultiplier(team))
             ));
         }
         result.put("teams", teams);
@@ -998,13 +1075,38 @@ public final class MindustryAgentPlugin extends Plugin {
     private int activeRtsControlPointCount(Team team) {
         int count = 0;
         for (RtsControlPoint point : rtsControlPoints) {
-            if (point.owner == team && !point.contested && point.capturingTeam == null) count++;
+            if (point.owner == team && isRtsControlPointBenefitActive(point)) count++;
         }
         return count;
     }
 
     private double rtsProductionSpeedMultiplier(Team team) {
-        return 1d + activeRtsControlPointCount(team) * RTS_CONTROL_PRODUCTION_SPEED_BONUS_PER_POINT;
+        return 1d + (hasActiveRtsControlPoint(team, "north_industry")
+            ? RTS_CONTROL_NORTH_PRODUCTION_SPEED_BONUS : 0d);
+    }
+
+    private RtsControlPoint rtsControlPoint(String id) {
+        for (RtsControlPoint point : rtsControlPoints) if (point.id.equals(id)) return point;
+        return null;
+    }
+
+    private boolean hasActiveRtsControlPoint(Team team, String id) {
+        RtsControlPoint point = rtsControlPoint(id);
+        return point != null && point.owner == team && isRtsControlPointBenefitActive(point);
+    }
+
+    private boolean isRtsControlPointBenefitActive(RtsControlPoint point) {
+        return point.owner != null && !point.contested && point.capturingTeam == null
+            && Vars.state.tick >= point.neutralUntilTick;
+    }
+
+    private String rtsControlPointCapturePhase(RtsControlPoint point) {
+        if (Vars.state.tick < point.neutralUntilTick) return "forced_neutral_lock";
+        if (point.contested) return "contested";
+        if (point.capturingTeam != null && point.owner != null) return "neutralizing_enemy_owner";
+        if (point.capturingTeam != null) return "capturing_neutral_point";
+        if (point.owner != null) return "secure_owned";
+        return "neutral";
     }
 
     private void updateRtsControlPointVisuals() {
@@ -1015,7 +1117,11 @@ public final class MindustryAgentPlugin extends Plugin {
         for (RtsControlPoint point : rtsControlPoints) {
             StringBuilder label = new StringBuilder("[accent]◆ ")
                 .append(controlPointDisplayName(point.id)).append("[]");
-            if (point.contested) {
+            if (Vars.state.tick < point.neutralUntilTick) {
+                label.append("\n[lightgray]중립화 잠금 ")
+                    .append(String.format(Locale.ROOT, "%.1f초[]",
+                        Math.max(0d, point.neutralUntilTick - Vars.state.tick) / 60d));
+            } else if (point.contested) {
                 label.append("\n[scarlet]교전 중[]");
             } else if (point.capturingTeam != null) {
                 label.append("\n").append(teamMarkup(point.capturingTeam))
@@ -1203,7 +1309,7 @@ public final class MindustryAgentPlugin extends Plugin {
                 ? "item turrets and walls use standard construction cost/time; resupply_turrets transfers chosen compatible ammunition from the abundant core stockpile without belts"
                 : "native Mindustry turret supply and wall mechanics",
             "territory_mechanic", "stockpile_rts_pvp".equals(gameModeVariant)
-                ? "combat units capture neutral map objectives; each owned point grants 10% faster unit training/upgrading and repairs friendly combat units inside its radius; control points do not directly win"
+                ? "secure north control accelerates unit training/upgrading, secure center control reveals opponent operational queues and squad plans, and secure south control repairs nearby friendly combat units and structures; hostile takeover must neutralize and wait before recapture; control points do not directly win"
                 : "none"
         ));
         if ("stockpile_rts_pvp".equals(gameModeVariant)) {
@@ -1224,6 +1330,7 @@ public final class MindustryAgentPlugin extends Plugin {
         root.put("rts_upgrade_queues", rtsUpgradeQueueState(team));
         root.put("rts_control_points", rtsControlPointState(team));
         root.put("rts_control_benefits", rtsControlBenefitState(team));
+        root.put("rts_tactical_intelligence", rtsTacticalIntelligenceState(team));
         root.put("rts_squads", rtsSquadState(team));
         root.put("recent_unit_command_receipts", recentUnitCommandReceipts(team));
         root.put("recent_combat_losses", recentCombatLossState(team));
@@ -3587,6 +3694,7 @@ public final class MindustryAgentPlugin extends Plugin {
                 hud.append(point.id).append('=')
                     .append(point.owner == null ? "중립" : point.owner.name);
                 if (point.contested) hud.append("(교전)");
+                else if (Vars.state.tick < point.neutralUntilTick) hud.append("(중립화 잠금)");
                 else if (point.capturingTeam != null) {
                     hud.append('(').append(point.capturingTeam.name).append(' ')
                         .append(String.format(Locale.ROOT, "%.0f%%", point.captureProgress * 100d)).append(')');
@@ -3594,13 +3702,18 @@ public final class MindustryAgentPlugin extends Plugin {
             }
             hud.append('\n').append("거점 보너스: ")
                 .append(teamMarkup(Team.sharded)).append(' ')
-                .append(String.format(Locale.ROOT, "x%.1f", rtsProductionSpeedMultiplier(Team.sharded)))
+                .append(rtsControlBenefitHud(Team.sharded))
                 .append(" | ").append(teamMarkup(Team.crux)).append(' ')
-                .append(String.format(Locale.ROOT, "x%.1f", rtsProductionSpeedMultiplier(Team.crux)))
-                .append(" (점령 범위 내 초당 1% 회복)");
+                .append(rtsControlBenefitHud(Team.crux));
         }
         Call.setHudText(hud.toString());
         spectatorHudVisible = true;
+    }
+
+    private String rtsControlBenefitHud(Team team) {
+        return "북생산x" + String.format(Locale.ROOT, "%.1f", rtsProductionSpeedMultiplier(team))
+            + "/중정보" + (hasActiveRtsControlPoint(team, "center_technology") ? "ON" : "OFF")
+            + "/남회복" + (hasActiveRtsControlPoint(team, "south_advanced") ? "ON" : "OFF");
     }
 
     private void appendSpectatorTeam(StringBuilder hud, Team team, String color) {
@@ -5180,6 +5293,52 @@ public final class MindustryAgentPlugin extends Plugin {
         return result;
     }
 
+    private Map<String, Object> rtsTacticalIntelligenceState(Team observer) {
+        if (!"stockpile_rts_pvp".equals(gameModeVariant)) return Map.of();
+        boolean enhanced = hasActiveRtsControlPoint(observer, "center_technology");
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("basic_battlefield_positions_are_always_complete", true);
+        result.put("center_operational_intelligence_active", enhanced);
+        result.put("meaning", enhanced
+            ? "Secure center control adds exact opponent construction, training, upgrade, and squad-order telemetry."
+            : "Enemy units and buildings remain fully visible, but opponent queues and squad plans require secure center control.");
+        if (!enhanced) {
+            result.put("opponent_operational_intelligence", List.of());
+            return result;
+        }
+        List<Map<String, Object>> opponents = new ArrayList<>();
+        for (Team team : configuredAgentTeams()) {
+            if (team == observer) continue;
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("team", team.name);
+            row.put("construction_queue", rtsConstructionQueueState(team));
+            row.put("training_queues", rtsTrainingQueueState(team));
+            row.put("upgrade_queues", rtsUpgradeQueueState(team));
+            row.put("squad_orders", rtsSquadOrderIntelligence(team));
+            opponents.add(row);
+        }
+        result.put("opponent_operational_intelligence", opponents);
+        return result;
+    }
+
+    private List<Map<String, Object>> rtsSquadOrderIntelligence(Team team) {
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (RtsSquad squad : teamAgentState(team).squads.values()) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("squad_id", squad.id);
+            row.put("mode", squad.mode);
+            row.put("unit_selector", squad.unitSelector);
+            row.put("living_member_count", squad.unitIds.stream()
+                .map(id -> findOwnedCommandableUnit(team, id)).filter(unit -> unit != null).count());
+            row.put("pending_training_units", pendingRtsTrainingUnits(team, squad.id));
+            row.put("target", Map.of("x", squad.targetX, "y", squad.targetY));
+            row.put("target_radius", squad.targetRadius);
+            row.put("engagement_radius", squad.engagementRadius);
+            result.add(row);
+        }
+        return result;
+    }
+
     private int pendingRtsTrainingUnits(Team team, String squadId) {
         int pending = 0;
         for (RtsTrainingOrder order : rtsTrainingOrders) {
@@ -6252,6 +6411,7 @@ public final class MindustryAgentPlugin extends Plugin {
         private Team owner;
         private Team capturingTeam;
         private double captureProgress;
+        private double neutralUntilTick;
         private boolean contested;
         private int captures;
 

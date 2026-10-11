@@ -20,10 +20,15 @@ class RtsPluginContractTest(unittest.TestCase):
         self.assertNotIn("deadUnits.each(Unit::remove)", self.source)
 
     def test_control_points_provide_benefits_but_not_victory(self) -> None:
-        self.assertIn("RTS_CONTROL_PRODUCTION_SPEED_BONUS_PER_POINT = 0.10d", self.source)
+        self.assertIn("RTS_CONTROL_NORTH_PRODUCTION_SPEED_BONUS = 0.10d", self.source)
         self.assertIn("RTS_CONTROL_REPAIR_MAX_HEALTH_PER_SECOND = 0.01d", self.source)
+        self.assertIn("RTS_CONTROL_STRUCTURE_REPAIR_MAX_HEALTH_PER_SECOND = 0.005d", self.source)
+        self.assertIn("RTS_CONTROL_NEUTRAL_LOCK_SECONDS = 5d", self.source)
         self.assertIn("rtsProductionSpeedMultiplier", self.source)
         self.assertIn("unit.heal", self.source)
+        self.assertIn("building.heal", self.source)
+        self.assertIn("rtsTacticalIntelligenceState", self.source)
+        self.assertIn("neutralized RTS control point", self.source)
         self.assertIn("activeRtsControlPointCount", self.source)
         self.assertIn("Math.min(1.5d", self.source)
         self.assertNotIn('gameEndReason = "all_three_control_points_', self.source)
@@ -53,10 +58,11 @@ class RtsPluginContractTest(unittest.TestCase):
         self.assertIn("GAME_THREAD_REQUEST_TIMEOUT_SECONDS = 20", self.source)
         self.assertIn("future.get(GAME_THREAD_REQUEST_TIMEOUT_SECONDS", self.source)
 
-    def test_showcase_uses_tactical_terrain_v2(self) -> None:
-        self.assertIn("symmetric_three_lane_tactical_showcase_v2", self.source)
-        self.assertIn("placeSymmetricTerrainRect", self.source)
-        self.assertIn("objective-side cover with open capture centers", self.source)
+    def test_showcase_uses_tactical_terrain_v3(self) -> None:
+        self.assertIn("symmetric_three_lane_tactical_showcase_v3", self.source)
+        self.assertIn("placeMirroredXTerrainRect", self.source)
+        self.assertIn("long southern S-bend rear approach", self.source)
+        self.assertIn("air-only shortcuts across the neutral ridge", self.source)
 
 
 if __name__ == "__main__":
