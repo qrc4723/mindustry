@@ -165,10 +165,8 @@ Stockpile RTS strategic frame (causal guidance, never a build order):
 - Response latency and combat adaptation are part of performance. Use current friendly/enemy units, queue timing,
   losses, distances, target health, factory survival, and remaining stockpile to make each decision. In this mode the
   runner refreshes state 0.5 seconds after every response; requested wait_seconds does not delay the next observation.
-- strategic_intelligence defines episode-local fog of war. enemy_units and enemy_teams[].buildings contain only
-  contacts currently inside friendly vision. last_known_enemy_units and last_known_enemy_buildings are stale evidence:
-  use seconds_since_seen, scout again before relying on exact position, and do not treat absence of a visible contact
-  as proof that an area is safe. Enemy-core coordinates and health are public victory-scoreboard information.
+- The observation contains the complete current battlefield state for both teams. There is no fog-of-war filtering;
+  enemy unit and building coordinates are current server-authoritative information, not stale reconnaissance tracks.
 - unit_catalog capability_tags describe factual movement, targeting, weapon effects, structure-damage multipliers,
   and support capabilities; they are not counter scores. recent_unit_combat reports actual recent bullet-hit output
   by attacker and target type. raw_damage is measured before target armor and shields, so interpret it together with
